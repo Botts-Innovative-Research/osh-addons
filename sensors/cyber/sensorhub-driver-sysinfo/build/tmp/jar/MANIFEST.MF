@@ -1,0 +1,11 @@
+Manifest-Version: 1.0
+Bundle-Vendor: Botts Inc
+Bundle-Activator: com.sample.impl.sensor.sysinfo.Activator
+Bundle-SymbolicName: org.sensorhub.sensorhub-driver-sysinfo
+Bundle-Name: Systems Info Sensor
+Bundle-Description: Driver to return Systems Information
+Bundle-Version: 1.0.5
+Bundle-BuildNumber: 4ff5bfa
+Bundle-License: MPL 2.0 (http://mozilla.org/MPL/2.0)
+Bundle-Copyright: Copyright (c) Botts Inc. All Rights Reserved
+
