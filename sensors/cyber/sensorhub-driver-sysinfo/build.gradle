@@ -9,8 +9,6 @@ repositories {
 dependencies {
     implementation 'org.sensorhub:sensorhub-core:' + oshCoreVersion
     implementation('org.sensorhub:sensorhub-service-swe:' + oshCoreVersion)
-//    implementation project(':sensorhub-service-video')
-//    implementation project(':sensorhub-driver-videocam')
     testImplementation('junit:junit:4.13.1')
     implementation("com.github.oshi:oshi-core-java11:6.4.11")
     implementation 'com.github.pires:obd-java-api:1.0'
@@ -19,7 +17,7 @@ dependencies {
 
 
 
-//    implementation "net.java.dev.jna:jna-jpms:${jna.version}"
+
 }
 
 // exclude tests requiring connection to the sensor
@@ -42,10 +40,10 @@ osgi {
 ext.pom >>= {
     developers {
         developer {
-            id 'some id'
+            id 'robinw'
             name 'Robin W.'
-            organization ''
-            organizationUrl ''
+            organization 'Botts, Inc'
+            organizationUrl 'https://botts-inc.com'
         }
     }
 }
