@@ -1,0 +1,24 @@
+READ ME file for the description and setup of this Systems Information Driver.
+
+necessary config changes for function of driver
+
+ipinfo.io api needs to be provided in line 52 of SystemsInfoConfig class, but the geolocation api is not currently implemented.
+AlertTarget and AlertSender need to be changed to the relevant email accounts that the user wants the driver to send alerts from and to.
+Additionally the driver is currently only set up for gmail accounts to be used for the AlertSender account. When that account is set up,
+the gmail account itself needs the app passwords to be applied for the mail app in their google account.
+
+This function is only available when two factor authentication is on for the account. It is the app password generated for mail that needs
+to be provided for line 91 in Alerts in the sessions class constructor authentication parameter. If the email sending the alert needs to
+a provider other than gmail, then the methods for sending the emails in the Alerts class starting on line 178 need to be changed to
+values that reflect the preferred email provider.
+
+The Alerts output is currently structured such that alerts are sent on entries that exist in it's datastream only. If an additional alert is
+desired, you need to either add the alert value in question to that class, or restructure the driver.
+
+The other Outputs are organized based on what type of information they are calling, most being based on the class that the calls
+belong to in OSHI's library.
+
+OSHI only runs on Java versions 8 and 11. There is no reason to assume that this will change anytime soon, so if you experience errors while
+using this driver, the java version that you are using should be the first palace to check.
+
+
