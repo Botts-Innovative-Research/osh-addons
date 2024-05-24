@@ -1,4 +1,4 @@
-package org.sensorhub.process.gamepadptz.impl;
+package org.sensorhub.process.universalcontroller.impl;
 
 import com.sample.impl.sensor.universalcontroller.helpers.UniversalControllerProcessHelper;
 import net.opengis.swe.v20.DataRecord;

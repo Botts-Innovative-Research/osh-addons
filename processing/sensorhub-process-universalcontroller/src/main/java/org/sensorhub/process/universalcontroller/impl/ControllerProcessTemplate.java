@@ -1,8 +1,8 @@
-package org.sensorhub.process.gamepadptz.impl;
+package org.sensorhub.process.universalcontroller.impl;
 
 import com.sample.impl.sensor.universalcontroller.helpers.UniversalControllerComponent;
 import org.sensorhub.api.processing.OSHProcessInfo;
-import org.sensorhub.process.gamepadptz.helpers.AbstractControllerTaskingProcess;
+import org.sensorhub.process.universalcontroller.helpers.AbstractControllerTaskingProcess;
 import org.vast.process.ProcessException;
 import org.vast.process.ProcessInfo;
 
