@@ -37,6 +37,7 @@ public class UniversalControllerSensor extends AbstractSensorModule<UniversalCon
 
     private static final Logger logger = LoggerFactory.getLogger(UniversalControllerSensor.class);
     UniversalControllerOutput output;
+    UniversalControllerControl control;
     ArrayList<IController> allControllers = new ArrayList<>();
     private FindControllers findControllers;
     @Override
@@ -68,10 +69,13 @@ public class UniversalControllerSensor extends AbstractSensorModule<UniversalCon
 
         // Create and initialize output
         output = new UniversalControllerOutput(this);
-
         addOutput(output, false);
-
         output.doInit();
+
+        // Create and initialize control
+        control = new UniversalControllerControl(this);
+        addControlInput(control);
+        control.init();
 
         // TODO: Perform other initialization
 

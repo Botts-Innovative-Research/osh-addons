@@ -62,6 +62,19 @@ public class UniversalControllerOutput extends AbstractSensorOutput<UniversalCon
 
     // Stuff from config
     private int numControlStreams;
+
+    public void setPrimaryControlStreamIndex(int primaryControlStreamIndex) {
+        if(numControlStreams > primaryControlStreamIndex && primaryControlStreamIndex >= 0) {
+            this.primaryControlStreamIndex = primaryControlStreamIndex;
+        }
+    }
+
+    public void setPrimaryControllerIndex(int primaryControllerIndex) {
+        if(parentSensor.allControllers.size() > primaryControllerIndex && primaryControllerIndex >= 0) {
+            this.primaryControllerIndex = primaryControllerIndex;
+        }
+    }
+
     private int primaryControlStreamIndex;
     private int primaryControllerIndex;
     private long pollingRate;
