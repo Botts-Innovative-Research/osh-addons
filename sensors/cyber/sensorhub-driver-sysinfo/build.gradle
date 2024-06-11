@@ -1,0 +1,49 @@
+description = 'Systems Info Sensor'
+ext.details = "Driver to return Systems Information"
+version = '1.0.5'
+
+
+repositories {
+    mavenCentral()
+}
+dependencies {
+    implementation 'org.sensorhub:sensorhub-core:' + oshCoreVersion
+    implementation('org.sensorhub:sensorhub-service-swe:' + oshCoreVersion)
+    testImplementation('junit:junit:4.13.1')
+    implementation("com.github.oshi:oshi-core-java11:6.4.11")
+    implementation 'com.github.pires:obd-java-api:1.0'
+    implementation 'com.sun.mail:javax.mail:1.6.2'
+    implementation 'org.apache.httpcomponents:httpclient:4.5.13'
+
+
+
+
+}
+
+// exclude tests requiring connection to the sensor
+// these have to be run manually
+//      If tests are to be excluded list them here as follows
+//          exclude '**/TestNameClass.class'
+test {
+    useJUnit()
+}
+
+// add info to OSGi manifest
+osgi {
+    manifest {
+        attributes ('Bundle-Vendor': 'Botts Inc')
+        attributes ('Bundle-Activator': 'com.sample.impl.sensor.sysinfo.Activator')
+    }
+}
+
+// add info to maven pom
+ext.pom >>= {
+    developers {
+        developer {
+            id 'robinw'
+            name 'Robin W.'
+            organization 'Botts, Inc'
+            organizationUrl 'https://botts-inc.com'
+        }
+    }
+}
