@@ -258,18 +258,21 @@ public class Alerts extends AbstractSensorOutput<SystemsInfoSensor> implements R
 //        }
 //
 //    }
-
-//TODO Set up logic to * by 20 only if the OS is Windows
-    public double setCpuVal() throws InterruptedException {
-//        double cpuLoad = processor.getSystemCpuLoad(1500) * 100;
-        long[] prevTicks = processor.getSystemCpuLoadTicks();
-        Thread.sleep(4000);
-        long[] ticks = processor.getSystemCpuLoadTicks();
-        double cpuLoad = (processor.getSystemCpuLoadBetweenTicks(prevTicks)*100)*20;
-
-        return cpuLoad;
-
+//TODO Still issues with cpuUsage accuracy, but this is the closest currently found for windows.
+public double setCpuVal() throws InterruptedException {
+    double cpuLoad = 0;
+    long[] prevTicks = processor.getSystemCpuLoadTicks();
+    Thread.sleep(2000);
+    long[] ticks = processor.getSystemCpuLoadTicks();
+    if ((String.valueOf(si.getOperatingSystem()).contains("Windows"))) {
+        cpuLoad = ((processor.getSystemCpuLoadBetweenTicks(prevTicks) * 100) *(processor.getPhysicalProcessorCount()))/2;
     }
+    else {
+        cpuLoad = (processor.getSystemCpuLoadBetweenTicks(prevTicks) * 100); }
+
+    return cpuLoad;
+
+}
 
 
     @Override
