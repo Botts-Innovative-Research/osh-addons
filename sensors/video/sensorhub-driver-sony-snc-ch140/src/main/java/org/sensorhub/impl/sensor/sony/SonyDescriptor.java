@@ -21,12 +21,12 @@ import org.sensorhub.impl.module.JarModuleProvider;
 
 /**
  * Class named in META-INF/services/org.sensorhub.api.module.IModuleProvider that informs OpenSensorHub of the existence
- * of a sensor driver and its configuration class. In this case, it tells OSH about the {@link FFMPEGSensor}.
+ * of a sensor driver and its configuration class. In this case, it tells OSH about the {@link SonySensor}.
  *
  * @author Drew Botts
  * @since Feb. 2023
  */
-public class FFMPEGDescriptor extends JarModuleProvider implements IModuleProvider {
+public class SonyDescriptor extends JarModuleProvider implements IModuleProvider {
 
     /**
      * Retrieves the class implementing the OpenSensorHub interface necessary to
@@ -36,7 +36,7 @@ public class FFMPEGDescriptor extends JarModuleProvider implements IModuleProvid
      */
     public Class<? extends IModule<?>> getModuleClass() {
 
-        return FFMPEGSensor.class;
+        return SonySensor.class;
     }
 
     /**

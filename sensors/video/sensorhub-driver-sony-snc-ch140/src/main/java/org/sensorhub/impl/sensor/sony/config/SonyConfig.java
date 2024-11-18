@@ -45,12 +45,13 @@ public class SonyConfig extends SensorConfig {
     @DisplayInfo(label = "Connection", desc = "Configuration options for source of MISB STANAG 4609 MPEG-TS")
     public Connection connection = new Connection();
 
-    public PositionConfig positionConfig = new PositionConfig();
-
-    @Override
-    public PositionConfig.LLALocation getLocation()
-    {
-        return positionConfig.location;
-    }
+    // TODO #REVIEW
+//    public PositionConfig positionConfig = new PositionConfig();
+//
+//    @Override
+//    public PositionConfig.LLALocation getLocation()
+//    {
+//        return positionConfig.location;
+//    }
 
 }

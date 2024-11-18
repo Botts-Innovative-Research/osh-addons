@@ -11,13 +11,12 @@
  Copyright (C) 2021 Botts Innovative Research, Inc. All Rights Reserved.
 
  ******************************* END LICENSE BLOCK ***************************/
-package org.sensorhub.impl.sensor.sony.outputs;
+package org.sensorhub.impl.sensor.sony;
 
 import java.util.concurrent.Executor;
 
 import org.sensorhub.api.data.DataEvent;
 import org.sensorhub.impl.sensor.AbstractSensorOutput;
-import org.sensorhub.impl.sensor.sony.FFMPEGSensorBase;
 import org.sensorhub.impl.sensor.sony.common.SyncTime;
 import org.sensorhub.impl.sensor.sony.config.SonyConfig;
 import org.sensorhub.impl.sensor.videocam.VideoCamHelper;
@@ -42,13 +41,13 @@ import net.opengis.swe.v20.DataStream;
  * @author Nick Garay / Drew Botts
  * @since Feb. 2, 2024
  */
-public class Video<FFMPEGConfigType extends SonyConfig> extends AbstractSensorOutput<FFMPEGSensorBase<FFMPEGConfigType>> implements DataBufferListener {
+public class SonyOutput<FFMPEGConfigType extends SonyConfig> extends AbstractSensorOutput<SonySensorBase<FFMPEGConfigType>> implements DataBufferListener {
 
     private static final String SENSOR_OUTPUT_NAME = "video";
     private static final String SENSOR_OUTPUT_LABEL = "Video";
     private static final String SENSOR_OUTPUT_DESCRIPTION = "Video stream using ffmpeg library";
 
-    private static final Logger logger = LoggerFactory.getLogger(Video.class);
+    private static final Logger logger = LoggerFactory.getLogger(SonyOutput.class);
 
     private final int videoFrameWidth;
     private final int videoFrameHeight;
@@ -70,7 +69,7 @@ public class Video<FFMPEGConfigType extends SonyConfig> extends AbstractSensorOu
      * @param parentSensor Sensor driver providing this output
      * @param videoFrameDimensions The width and height of the video frame
      */
-    public Video(FFMPEGSensorBase<FFMPEGConfigType> parentSensor, int[] videoFrameDimensions, String cFormat) {
+    public SonyOutput(SonySensorBase<FFMPEGConfigType> parentSensor, int[] videoFrameDimensions, String cFormat) {
 
         super(SENSOR_OUTPUT_NAME, parentSensor);
 

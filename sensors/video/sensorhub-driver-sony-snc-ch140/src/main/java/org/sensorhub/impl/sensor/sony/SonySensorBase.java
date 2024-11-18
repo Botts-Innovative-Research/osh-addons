@@ -7,23 +7,21 @@ import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.impl.sensor.AbstractSensorModule;
 import org.sensorhub.impl.sensor.sony.common.SyncTime;
 import org.sensorhub.impl.sensor.sony.config.SonyConfig;
-import org.sensorhub.impl.sensor.sony.outputs.Video;
 import org.sensorhub.mpegts.MpegTsProcessor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.vast.swe.SWEConstants;
-import org.vast.util.Asserts;
 
 /**
  * Base class for an MPEG TS stream.
  * 
  * 
- * @param <FFMPEGConfigType> The concrete configuration class used by the sensor. Needed by the superclass, and the two
+ * @param <SonyConfigType> The concrete configuration class used by the sensor. Needed by the superclass, and the two
  *   subclasses have slightly different config, so we have to parameterize it.
  */
-public abstract class FFMPEGSensorBase<FFMPEGConfigType extends SonyConfig> extends AbstractSensorModule<FFMPEGConfigType> {
+public abstract class SonySensorBase<SonyConfigType extends SonyConfig> extends AbstractSensorModule<SonyConfigType> {
 	/** Debug logger */
-    private static final Logger logger = LoggerFactory.getLogger(FFMPEGSensorBase.class);
+    private static final Logger logger = LoggerFactory.getLogger(SonySensorBase.class);
 
     /**
      * Thing that knows how to parse the data out of the bytes from the video stream.
@@ -38,7 +36,7 @@ public abstract class FFMPEGSensorBase<FFMPEGConfigType extends SonyConfig> exte
     /**
      * Sensor output for the video frames.
      */
-    protected Video<FFMPEGConfigType> videoOutput;
+    protected SonyOutput<SonyConfigType> videoOutput;
 
     /**
      * Keeps track of the times in the data stream so that we can put an accurate phenomenon time in the data blocks.
@@ -149,7 +147,7 @@ public abstract class FFMPEGSensorBase<FFMPEGConfigType extends SonyConfig> exte
      * already been created and added to the sensor.
      */
     protected void createVideoOutput(int[] videoDims, String codecFormat) {
-    	videoOutput = new Video<FFMPEGConfigType>(this, videoDims, codecFormat);
+    	videoOutput = new SonyOutput<SonyConfigType>(this, videoDims, codecFormat);
     	if (executor != null) {
     		videoOutput.setExecutor(executor);
     	}
@@ -181,17 +179,13 @@ public abstract class FFMPEGSensorBase<FFMPEGConfigType extends SonyConfig> exte
     protected void openStream() throws SensorHubException {
     	if (mpegTsProcessor == null) {
 	    	logger.info("Opening MPEG TS connection for {} ...", getUniqueIdentifier());
-	        // Initialize the MPEG transport stream processor from the source named in the configuration.
-	        // If neither the file source nor a connection string is specified, throw an exception so the user knows that
-	        // they have to provide at least one of them.
-	        if ((null != config.connection.transportStreamPath) && (!config.connection.transportStreamPath.isBlank())) {
-	            Asserts.checkArgument(config.connection.fps >= 0, "FPS must be >= 0");
-	            mpegTsProcessor = new MpegTsProcessor(config.connection.transportStreamPath, config.connection.fps, config.connection.loop);
-	        } else if ((null != config.connection.connectionString) && (!config.connection.connectionString.isBlank())) {
-	            mpegTsProcessor = new MpegTsProcessor(config.connection.connectionString);
-	        } else {
-	        	throw new SensorHubException("Either the input file path or the connection string must be set");
-	        }
+
+            if ((config.connection.ipAddress != null) && (!config.connection.ipAddress.isBlank())) {
+                String connectionString = "rtsp://" + config.connection.ipAddress + ":554/media/video1";
+                mpegTsProcessor = new MpegTsProcessor(connectionString);
+            } else {
+                throw new SensorHubException(("Could not instantiate mpegTsPorcessor"));
+            }
 	        
 	        if (mpegTsProcessor.openStream()) {
 	        	logger.info("Stream opened for {}", getUniqueIdentifier());

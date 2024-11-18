@@ -23,7 +23,7 @@ import org.sensorhub.impl.sensor.sony.config.SonyConfig;
  * @author Drew Botts
  * @since Feb. 2023
  */
-public class FFMPEGSensor extends FFMPEGSensorBase<SonyConfig> {
+public class SonySensor extends SonySensorBase<SonyConfig> {
     @Override
     protected void doInit() throws SensorHubException {
         super.doInit();
