@@ -15,6 +15,7 @@ Developer are Copyright (C) 2014 the Initial Developer. All Rights Reserved.
 
 package org.sensorhub.impl.sensor.hcsr04;
 
+import net.opengis.swe.v20.*;
 import org.sensorhub.impl.sensor.AbstractSensorOutput;
 import org.sensorhub.api.comm.ICommProvider;
 import org.sensorhub.api.data.DataEvent;
@@ -28,10 +29,6 @@ import java.time.LocalDateTime;
 import java.util.Date;
 import java.util.TimeZone;
 
-import net.opengis.swe.v20.DataBlock;
-import net.opengis.swe.v20.DataComponent;
-import net.opengis.swe.v20.DataEncoding;
-import net.opengis.swe.v20.Quantity;
 import net.opengis.gml.v32.AbstractFeature;
 
 import org.vast.swe.SWEConstants;
@@ -40,27 +37,72 @@ import org.vast.swe.helper.GeoPosHelper;
 
 
 public class Output extends AbstractSensorOutput<Sensor> {
-    DataComponent data;
+    private static final String SENSOR_OUTPUT_NAME = "DistanceOutput";
+    private static final String SENSOR_OUTPUT_LABEL = "Distance Output";
+    private static final String SENSOR_OUTPUT_DESCRIPTION = "Output data from the HC-SR04 Sensor";
+
+    DataRecord dataRecord;
     DataEncoding dataEncoding;
 
-    public Output(Sensor parentSensor)
-    {
-        super("data", parentSensor);
+    public Output(Sensor parentSensor) {
+        super(SENSOR_OUTPUT_NAME, parentSensor);
+
+        initializeDataRecord();
+        initializeDataEncoding();
     }
 
-    public void init() {}
+    /**
+     * Sets the data for the sensor output.
+     *
+     * @param distance long indicating the distance in cm to the nearest object detected
+     */
+    public void setData(long distance) {
+        long timestamp = System.currentTimeMillis();
+        DataBlock dataBlock = latestRecord == null ? dataRecord.createDataBlock() : latestRecord.renew();
+
+        dataBlock.setDoubleValue(0, timestamp / 1000d);
+        dataBlock.setLongValue(1, distance);
+
+        latestRecord = dataBlock;
+        eventHandler.publish(new DataEvent(timestamp, Output.this, dataBlock));
+    }
+
+    /**
+     * Initializes the data record for the sensor output.
+     */
+    private void initializeDataRecord() {
+        SWEHelper sweHelper = new SWEHelper();
+
+        dataRecord = sweHelper.createRecord()
+                .name(SENSOR_OUTPUT_NAME)
+                .label(SENSOR_OUTPUT_LABEL)
+                .description(SENSOR_OUTPUT_DESCRIPTION)
+                .addField("sampleTime", sweHelper.createTime()
+                        .asSamplingTimeIsoUTC()
+                        .label("Sample Time")
+                        .description("Time of data collection"))
+                .addField("distance", sweHelper.createQuantity()
+                        .label("Distance (cm)")
+                        .description("Distance to nearest object detected"))
+                .build();
+    }
+
+    /**
+     * Initializes the data encoding for the sensor output.
+     */
+    private void initializeDataEncoding() {
+        dataEncoding = new SWEHelper().newTextEncoding(",", "\n");
+    }
 
     @Override
     public double getAverageSamplingPeriod() {
-        return 10.0; // 10 sec
+        return Double.NaN;
     }
-
 
     @Override
     public DataComponent getRecordDescription() {
-        return data;
+        return dataRecord;
     }
-
 
     @Override
     public DataEncoding getRecommendedEncoding() {

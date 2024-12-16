@@ -1,17 +1,17 @@
 /***************************** BEGIN LICENSE BLOCK ***************************
 
-The contents of this file are subject to the Mozilla Public License, v. 2.0.
-If a copy of the MPL was not distributed with this file, You can obtain one
-at http://mozilla.org/MPL/2.0/.
+ The contents of this file are subject to the Mozilla Public License, v. 2.0.
+ If a copy of the MPL was not distributed with this file, You can obtain one
+ at http://mozilla.org/MPL/2.0/.
 
-Software distributed under the License is distributed on an "AS IS" basis,
-WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
-for the specific language governing rights and limitations under the License.
- 
-The Initial Developer is Botts Innovative Research Inc. Portions created by the Initial
-Developer are Copyright (C) 2014 the Initial Developer. All Rights Reserved.
- 
-******************************* END LICENSE BLOCK ***************************/
+ Software distributed under the License is distributed on an "AS IS" basis,
+ WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
+ for the specific language governing rights and limitations under the License.
+
+ The Initial Developer is Botts Innovative Research Inc. Portions created by the Initial
+ Developer are Copyright (C) 2014 the Initial Developer. All Rights Reserved.
+
+ ******************************* END LICENSE BLOCK ***************************/
 
 package org.sensorhub.impl.sensor.hcsr04;
 
@@ -22,17 +22,8 @@ import org.sensorhub.api.common.SensorHubException;
 
 import com.pi4j.Pi4J;
 
-import java.io.BufferedReader;
-import java.io.BufferedWriter;
-import java.io.IOException;
-import java.io.InputStreamReader;
-import java.io.OutputStream;
 import java.sql.Timestamp;
 import java.util.concurrent.TimeUnit;
-
-import org.sensorhub.api.comm.ICommProvider;
-import org.vast.sensorML.SMLHelper;
-import org.vast.swe.SWEHelper;
 
 
 /**
@@ -45,12 +36,14 @@ import org.vast.swe.SWEHelper;
  */
 public class Sensor extends AbstractSensorModule<Config> {
     private Context pi4j;
-    private DigitalInput input;
-    private DigitalOutput output;
+    private DigitalInput gpioInput;
+    private DigitalOutput gpioOutput;
+    private Output sensorOutput;
+    private Control controlInterface;
 
     public Sensor() {}
 
-    private void setInput() {
+    private void setGpioInput() {
         try {
             DigitalInputConfig inputConfig = DigitalInput.newConfigBuilder(pi4j)
                     .id("gpio-input")
@@ -59,14 +52,14 @@ public class Sensor extends AbstractSensorModule<Config> {
                     .pull(PullResistance.PULL_DOWN) // This determines the default state of the pin when there is no signal. (0 volts)
                     .build();
             DigitalInputProvider digitalInputProvider = pi4j.provider("pigpio-digital-input");
-            input = digitalInputProvider.create(inputConfig);
+            gpioInput = digitalInputProvider.create(inputConfig);
         } catch (Exception e) {
             System.out.println("ERROR SETTING INPUT");
             System.out.println(e);
         }
     }
 
-    private void setOutput() {
+    private void setGpioOutput() {
         try {
             DigitalOutputConfig outputConfig = DigitalOutput.newConfigBuilder(pi4j)
                     .id("gpio-output")
@@ -76,64 +69,96 @@ public class Sensor extends AbstractSensorModule<Config> {
                     .initial(DigitalState.LOW)
                     .build();
             DigitalOutputProvider digitalOutputProvider = pi4j.provider("pigpio-digital-output");
-            output = digitalOutputProvider.create(outputConfig);
+            gpioOutput = digitalOutputProvider.create(outputConfig);
         } catch (Exception e) {
             System.out.println("ERROR SETTING OUTPUT");
             System.out.println(e);
         }
     }
 
-    // The sensor is triggered when the output pin is set to high for 10 microseconds
-    private void initiateSensorReading() {
-        output.state(DigitalState.HIGH);
+    private void setSensorOutput() {
+        sensorOutput = new Output(this);
+        addOutput(sensorOutput, false);
+    }
 
-        try {
-            TimeUnit.MICROSECONDS.sleep(10);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
+    // The sensor is triggered when the output pin is set to high for 10 microseconds
+    public void initiateSensorReading(boolean trigger) {
+        if (trigger) {
+            gpioOutput.state(DigitalState.HIGH);
+
+            try {
+                TimeUnit.MICROSECONDS.sleep(10);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+
+            gpioOutput.state(DigitalState.LOW);
+        }
+    }
+
+    public void readDistance() {
+        // continuously read the input pin if it's state is low. once it's state is not low, we'll have the timestamp of when it was switched to high
+        Timestamp start = new Timestamp(System.currentTimeMillis());
+        Timestamp timeoutStart = new Timestamp(System.currentTimeMillis());
+        int timeout = 30; // 23 milliseconds is the longest it should take the sensor to receive the echo pulse since it's max range is 400cm
+        while (gpioInput.isLow()) {
+            start = new Timestamp(System.currentTimeMillis());
+            if (start.getTime() - timeoutStart.getTime() >= timeout) {
+                System.out.println("Echo pulse was not detected");
+                return;
+            }
         }
 
-        output.state(DigitalState.LOW);
+        // continuously read the input pin if it's state is high. once it's state is not high, we'll have the timestamp of when it was switched to low
+        Timestamp end = new Timestamp(System.currentTimeMillis());
+        while (gpioInput.isHigh()) {
+            end = new Timestamp(System.currentTimeMillis());
+        }
+
+        long pulseDuration = (end.getTime() - start.getTime()); // ms
+        double speedOfSound = 34.3; // cm/ms
+        long distance = (long) (pulseDuration * speedOfSound) / 2; // cm
+        System.out.println(distance + " cm");
+
+        sensorOutput.setData(distance);
     }
 
     @Override
     protected void doInit() throws SensorHubException {
         System.out.println("Initializing sensor...");
 
+        super.doInit();
+        generateUniqueID("urn:osh:sensor:hcsr04:", config.serialNumber);
+        generateXmlID("HCSR04", config.serialNumber);
+
+        controlInterface = new Control(this);
+        addControlInput(controlInterface);
+        controlInterface.init();
+
         pi4j = Pi4J.newAutoContext();
-        setInput();
-        setOutput();
+        setGpioInput();
+        setGpioOutput();
+        setSensorOutput();
     }
 
     @Override
-    protected void updateSensorDescription() {}
-    
+    protected void updateSensorDescription() {
+        synchronized (sensorDescLock) {
+            super.updateSensorDescription();
+
+            if (!sensorDescription.isSetDescription()) {
+                sensorDescription.setDescription("Driver for HC-SR04 Ultrasonic Sensor on a raspberry pi");
+            }
+        }
+    }
+
     @Override
     protected void doStart() throws SensorHubException {
         System.out.println("Starting sensor...");
 
-        initiateSensorReading();
-
-        // Read result
-        // TODO Is it possible to miss some time? What if the input pin is set to high before this code executes? I think it's possible to miss sometime but maybe it doesn't matter
-        //  Or is the hardware pretty much guaranteed to be slower that the hardware?
-        //  Can we do this with a listener instead?
-
-        // continuously read the input pin if it's state is low. once it's state is not low, we'll have the timestamp of when it was switched to high
-        Timestamp start = new Timestamp(System.currentTimeMillis());
-        while (input.state().equals(DigitalState.LOW)) {
-            start = new Timestamp(System.currentTimeMillis());
-        }
-
-        // continuously read the input pin if it's state is high. once it's state is not high, we'll have the timestamp of when it was switched to low
-        Timestamp end = new Timestamp(System.currentTimeMillis());
-        while (input.state().equals(DigitalState.HIGH)) {
-            end = new Timestamp(System.currentTimeMillis());
-        }
-
-        long duration = end.getTime() - start.getTime();
-        System.out.println("DURATION: " + duration);
-
+        super.doStart();
+        initiateSensorReading(true);
+        readDistance();
     }
 
     @Override
@@ -143,7 +168,7 @@ public class Sensor extends AbstractSensorModule<Config> {
 
     @Override
     public void cleanup() throws SensorHubException {}
-    
+
     @Override
     public boolean isConnected() {
         return true;

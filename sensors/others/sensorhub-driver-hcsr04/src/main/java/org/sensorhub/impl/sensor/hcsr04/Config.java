@@ -15,10 +15,9 @@ Developer are Copyright (C) 2014 the Initial Developer. All Rights Reserved.
 
 package org.sensorhub.impl.sensor.hcsr04;
 
-import org.sensorhub.api.comm.CommProviderConfig;
-import org.sensorhub.api.config.DisplayInfo;
 import org.sensorhub.api.config.DisplayInfo.Required;
 import org.sensorhub.api.sensor.SensorConfig;
+import java.util.ArrayList;
 
 
 public class Config extends SensorConfig {
@@ -26,8 +25,12 @@ public class Config extends SensorConfig {
     public String serialNumber = "0001";
     
     @Required
-    public String gpioInput = "23"; // pin 16
-    public String gpioOutput = "24"; // pin 18
+    public String gpioInput = "24";
+
+    @Required
+    public String gpioOutput = "23";
+
+    public String command = String.valueOf(true);
     
     public Config()
     {
