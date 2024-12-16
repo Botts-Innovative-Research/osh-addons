@@ -25,6 +25,7 @@ To use the driver, follow these steps:
 4. Select the HC-SR04 driver from the list of available drivers.
 5. Configure the driver as described in the Configuration section.
 6. Start the driver by selecting Drivers from the left-hand accordion control and right-clicking the driver in the list of drivers to bring up the context-sensitive menu.
+7. To take a reading, set the Trigger command to `true` and submit. It's kind of contrived but this was a learning exercise.
 
 ***
 
