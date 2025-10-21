@@ -16,9 +16,7 @@
 package com.botts.impl.driver.meshtastic;
 
 import com.botts.impl.driver.meshtastic.control.TextMessageControl;
-import com.botts.impl.driver.meshtastic.output.AbstractMeshtasticOutput;
-import com.botts.impl.driver.meshtastic.output.MyNodeInfoOutput;
-import com.botts.impl.driver.meshtastic.output.NodeInfoOutput;
+import com.botts.impl.driver.meshtastic.output.*;
 import org.meshtastic.proto.MeshProtos;
 import org.sensorhub.api.comm.ICommProvider;
 import org.sensorhub.api.common.SensorHubException;
@@ -66,6 +64,8 @@ public class MeshtasticSensor extends AbstractSensorModule<MeshtasticConfig> {
 
         addOutput(new NodeInfoOutput(this), false);
         addOutput(new MyNodeInfoOutput(this), false);
+        addOutput(new PositionPacketOutput(this), false);
+        addOutput(new TextMessagePacketOutput(this), false);
 
         addControlInput(new TextMessageControl(this));
     }
@@ -75,6 +75,17 @@ public class MeshtasticSensor extends AbstractSensorModule<MeshtasticConfig> {
         if (commProvider != null) {
             commProvider.start();
             startProcessing();
+
+            // send "handshake" to start receiving protobufs
+            MeshProtos.ToRadio handshake = MeshProtos.ToRadio.newBuilder()
+                    // TODO: Verify response ID in future if needed
+                    .setWantConfigId(0)
+                    .build();
+            try {
+                sendMessage(handshake);
+            } catch (IOException e) {
+                getLogger().error("Failed to send handshake message", e);
+            }
         }
     }
     public void sendMessage(MeshProtos.ToRadio message) throws IOException {
@@ -104,7 +115,7 @@ public class MeshtasticSensor extends AbstractSensorModule<MeshtasticConfig> {
                     do {
                         b = in.read();
                         if (b == -1) return;
-                        if (b != START1) {
+                        if (b != 0x94) {
                             // optional: treat as debug ASCII
                             System.out.print((char) b);
                         }
@@ -113,8 +124,10 @@ public class MeshtasticSensor extends AbstractSensorModule<MeshtasticConfig> {
                     // expect START2
                     b = in.read();
                     // invalid header
-                    if (b != START2)
+                    if (b != 0xC3) {
+                        getLogger().warn("Invalid header");
                         continue;
+                    }
 
                     // protobuf length
                     int lenMSB = in.read();
