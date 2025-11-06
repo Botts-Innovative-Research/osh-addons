@@ -34,6 +34,10 @@ public class MeshtasticConfig extends SensorConfig {
     @DisplayInfo.FieldType(DisplayInfo.FieldType.Type.REMOTE_ADDRESS)
     public String bleAddress;
 
+    @DisplayInfo(desc = "Comm settings used to interface over serial, UDP, TCP, etc.")
     public CommProviderConfig<?> commSettings;
+
+    @DisplayInfo(desc = "Network settings primarily used to interface with BLE network")
+    public NetworkConfig networkSettings;
 
 }

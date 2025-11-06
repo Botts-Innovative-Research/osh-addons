@@ -45,20 +45,6 @@ public class MeshtasticSensor extends AbstractSensorModule<MeshtasticConfig> {
         generateUniqueID("urn:osh:driver:meshtastic:", config.serialNumber);
         generateXmlID("MESHTASTIC_", config.serialNumber);
 
-        // TODO: Add option for using BLE client instead of serial
-        // Create and initialize output
-//        IBleNetwork network = getParentHub().getModuleRegistry().getModuleByType(IBleNetwork.class);
-//        network.getDeviceScanner().startScan(new IDeviceScanCallback() {
-//            @Override
-//            public void onDeviceFound(IDeviceInfo info) {
-//                System.out.println(info.getName());
-//            }
-//
-//            @Override
-//            public void onScanError(Throwable e) {
-//                e.printStackTrace();
-//            }
-//        });
         if (config.commSettings != null)
             commProvider = (ICommProvider<?>) getParentHub().getModuleRegistry().loadSubModule(config.commSettings, true);
 
@@ -169,7 +155,6 @@ public class MeshtasticSensor extends AbstractSensorModule<MeshtasticConfig> {
                 }
 
             } catch (IOException e) {
-                getLogger().error("");
             }
         });
     }
