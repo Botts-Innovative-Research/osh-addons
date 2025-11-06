@@ -119,8 +119,16 @@ public interface IGattClient
      * @return true, if the write operation was initiated successfully
      */
     boolean writeDescriptor(IGattDescriptor descriptor);
-    
-    
+
+
+    /**
+     *
+     * @param mtu
+     * @return
+     */
+    boolean requestMtu(int mtu);
+
+
     /**
      * Definitely closes this GATT client and frees any resources associated with it.
      */
