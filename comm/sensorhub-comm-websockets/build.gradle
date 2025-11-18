@@ -1,0 +1,13 @@
+description = 'WebSocket Comm API'
+ext.details = 'Common API for WebSockets'
+
+dependencies {
+  implementation 'org.sensorhub:sensorhub-core:' + oshCoreVersion
+    implementation('io.socket:socket.io-client:0.8.3')
+    testImplementation('junit:junit:4.13.1')
+    implementation('junit:junit:4.13.1')
+}
+
+test {
+    useJUnit()
+}
