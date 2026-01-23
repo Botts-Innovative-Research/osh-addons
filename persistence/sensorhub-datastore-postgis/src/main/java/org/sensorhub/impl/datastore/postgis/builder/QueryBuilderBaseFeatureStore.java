@@ -38,8 +38,9 @@ public abstract class QueryBuilderBaseFeatureStore<V extends IFeature,VF extends
     public String createTableQuery() {
         // NOTE: do not use JSONB because we need to keep order to the properties for geoGSON
         // see: https://www.postgresql.org/docs/current/datatype-json.html
-        return "CREATE TABLE " + this.getStoreTableName() +
-                " (id BIGSERIAL," +
+        return "CREATE TABLE IF NOT EXISTS " + this.getStoreTableName() +
+                " (pkId BIGSERIAL PRIMARY KEY," +
+                "id bigint," +
                 " parentId bigint,"+
                 GEOMETRY +" GEOMETRY, "+
                 VALID_TIME +" tsrange,"+
@@ -55,7 +56,7 @@ public abstract class QueryBuilderBaseFeatureStore<V extends IFeature,VF extends
                 "SELECT (${1}),(${2}),(${3}),(${4}),(${5})";
     }
 
-    public String selectByPrimaryKeyQuery() {
+    public String selectByIdQuery() {
         return "SELECT data FROM " + this.getStoreTableName() + " WHERE id = ? AND lower(" + this.getStoreTableName() + ".validTime) = ?::timestamp";
     }
 
@@ -90,7 +91,7 @@ public abstract class QueryBuilderBaseFeatureStore<V extends IFeature,VF extends
                 "FROM " + this.getStoreTableName() + " WHERE (data->'properties'->>'uid') = '" + uid +"'" +
                 "AND validTime " +
                 PostgisUtils.getOperator(RangeFilter.RangeOp.CONTAINS) +
-                " CURRENT_TIMESTAMP::timestamp order by id, lower(validTime) DESC";
+                " CURRENT_TIMESTAMP::timestamp order by id, lower(validTime) DESC ";
     }
 
     public String selectLastVersionByIdQuery(long id, String timestamp) {
@@ -115,15 +116,15 @@ public abstract class QueryBuilderBaseFeatureStore<V extends IFeature,VF extends
     }
 
     public String createUidUniqueIndexQuery() {
-        return "CREATE UNIQUE INDEX "+this.getStoreTableName()+"_feature_uid_idx ON "+this.getStoreTableName()+" " +
+        return "CREATE UNIQUE INDEX IF NOT EXISTS "+this.getStoreTableName()+"_feature_uid_idx ON "+this.getStoreTableName()+" " +
                 "((data->'properties'->>'uid'), "+VALID_TIME+")";
     }
     public String createValidTimeIndexQuery() {
-        return "CREATE INDEX "+this.getStoreTableName()+"_feature_valid_time_0_idx ON "+this.getStoreTableName()+ " using GIST (validTime)";
+        return "CREATE INDEX IF NOT EXISTS  "+this.getStoreTableName()+"_feature_valid_time_0_idx ON "+this.getStoreTableName()+ " using GIST (validTime)";
     }
 
     public String createIdIndexQuery() {
-        return "CREATE INDEX "+this.getStoreTableName()+"_feature_id_idx ON "+this.getStoreTableName()+" (id)";
+        return "CREATE INDEX IF NOT EXISTS "+this.getStoreTableName()+"_feature_id_idx ON "+this.getStoreTableName()+" (id)";
     }
 
     public String createTrigramExtensionQuery() {
@@ -131,11 +132,11 @@ public abstract class QueryBuilderBaseFeatureStore<V extends IFeature,VF extends
     }
 
     public String createTrigramDescriptionFullTextIndexQuery() {
-        return "CREATE INDEX "+this.getStoreTableName()+"_feature_desc_full_text_datastream_idx ON  "+this.getStoreTableName()+" USING GIN ((data->'properties'->>'description') gin_trgm_ops)";
+        return "CREATE INDEX IF NOT EXISTS "+this.getStoreTableName()+"_feature_desc_full_text_datastream_idx ON  "+this.getStoreTableName()+" USING GIN ((data->'properties'->>'description') gin_trgm_ops)";
     }
 
     public String createTrigramUidFullTextIndexQuery() {
-        return "CREATE INDEX "+this.getStoreTableName()+"_feature_uid_full_text_datastream_idx ON  "+this.getStoreTableName()+" USING GIN ((data->'properties'->>'uid') gin_trgm_ops)";
+        return "CREATE INDEX IF NOT EXISTS "+this.getStoreTableName()+"_feature_uid_full_text_datastream_idx ON  "+this.getStoreTableName()+" USING GIN ((data->'properties'->>'uid') gin_trgm_ops)";
     }
 
     public abstract String createSelectEntriesQuery(F filter, Set<VF> fields);

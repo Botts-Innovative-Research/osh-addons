@@ -34,20 +34,20 @@ public class QueryBuilderDataStreamStore extends QueryBuilder {
     }
 
     public String createTableQuery() {
-        return "CREATE TABLE " + this.getStoreTableName() + " (id BIGSERIAL PRIMARY KEY,data JSONB)";
+        return "CREATE TABLE IF NOT EXISTS " + this.getStoreTableName() + " (id BIGSERIAL PRIMARY KEY,data JSONB)";
     }
 
     public String createIndexQuery() {
-        return "CREATE INDEX " + this.getStoreTableName() + "_data_idx on " + this.getStoreTableName() + " USING GIN(data)";
+        return "CREATE INDEX IF NOT EXISTS " + this.getStoreTableName() + "_data_idx on " + this.getStoreTableName() + " USING GIN(data)";
     }
 
     public String createUniqueIndexQuery() {
-        return "CREATE UNIQUE INDEX " + this.getStoreTableName() + "_data_output_idx ON " + this.getStoreTableName()
+        return "CREATE UNIQUE INDEX IF NOT EXISTS " + this.getStoreTableName() + "_data_output_idx ON " + this.getStoreTableName()
                 + " USING BTREE((data->'name'), (data->'system@id'), (data->'validTime'))";
     }
 
     public String createDateRangeIndexQuery() {
-        return "CREATE INDEX "+this.getStoreTableName()+"_date_range_idx ON " + this.getStoreTableName() +
+        return "CREATE INDEX IF NOT EXISTS "+this.getStoreTableName()+"_date_range_idx ON " + this.getStoreTableName() +
                 " USING gist (int8range( " +
                 "(data->'validTime'->'begin')::bigint, " +
                 "(data->'validTime'->'end')::bigint" +
@@ -55,11 +55,11 @@ public class QueryBuilderDataStreamStore extends QueryBuilder {
     }
 
     public String createValidTimeBeginIndexQuery() {
-        return "CREATE INDEX "+this.getStoreTableName()+"_date_range_begin_idx ON " + this.getStoreTableName() + " USING GIN((data->'validTime'->'begin'))";
+        return "CREATE INDEX IF NOT EXISTS "+this.getStoreTableName()+"_date_range_begin_idx ON " + this.getStoreTableName() + " USING GIN((data->'validTime'->'begin'))";
     }
 
     public String createValidTimeEndIndexQuery() {
-        return "CREATE INDEX "+this.getStoreTableName()+"_date_range_end_idx ON " + this.getStoreTableName() + " USING GIN((data->'validTime'->'end'))";
+        return "CREATE INDEX IF NOT EXISTS "+this.getStoreTableName()+"_date_range_end_idx ON " + this.getStoreTableName() + " USING GIN((data->'validTime'->'end'))";
     }
 
     public String createTrigramExtensionQuery() {
@@ -67,12 +67,12 @@ public class QueryBuilderDataStreamStore extends QueryBuilder {
     }
 
     public String createTrigramDescriptionFullTextIndexQuery() {
-        return "CREATE INDEX "+this.getStoreTableName()+"_desc_full_text_datastream_idx ON  " + this.getStoreTableName() + " USING GIN ((data->'recordSchema'->>'description') gin_trgm_ops)";
+        return "CREATE INDEX IF NOT EXISTS "+this.getStoreTableName()+"_desc_full_text_datastream_idx ON  " + this.getStoreTableName() + " USING GIN ((data->'recordSchema'->>'description') gin_trgm_ops)";
     }
 
     //SELECT * from test_obs_datastreams where to_tsvector(data->'recordStruct'->'description') @@ to_tsquery('video | Air');
     public String createDescriptionFullTextIndexQuery() {
-        return "CREATE INDEX "+this.getStoreTableName()+"_desc_full_text_datastream_idx ON " + this.getStoreTableName() + " USING " +
+        return "CREATE INDEX IF NOT EXISTS "+this.getStoreTableName()+"_desc_full_text_datastream_idx ON " + this.getStoreTableName() + " USING " +
                 "GIN (to_tsvector('english', data->'recordSchema'->'description'))";
     }
 
@@ -84,6 +84,13 @@ public class QueryBuilderDataStreamStore extends QueryBuilder {
         return "UPDATE " + this.getStoreTableName() + " SET data = jsonb_set(data, '{validTime}'::text[], to_jsonb(?), true) WHERE id = ?";
     }
 
+    public String updateDataByIdQuery() {
+        return "UPDATE " + this.getStoreTableName() + " SET data = ? WHERE id = ?";
+    }
+
+    public String removeUniqueConstraint() {
+        return "DROP INDEX IF EXISTS "+this.getStoreTableName() + "_data_output_idx";
+    }
     public String insertInfoQuery() {
         return "INSERT INTO " + this.getStoreTableName() + " (data) SELECT (?) ";
     }
@@ -99,6 +106,7 @@ public class QueryBuilderDataStreamStore extends QueryBuilder {
                 .linkTo(this.systemStore)
                 .withFields(fields)
                 .withDataStreamFilter(filter)
+                .withLimit(filter.getLimit())
                 .build();
         return selectEntriesDataStreamQuery.toQuery();
     }
