@@ -1,15 +1,7 @@
 package org.sensorhub.impl.process.video.transcoder.helpers;
 import static org.bytedeco.ffmpeg.global.avcodec.*;
 
-public class CodecOptions {
-    private int fps;
-    private int bitRate;
-    private int width;
-    private int height;
-    private int compliance;
-    private String preset;
-    private String tune;
-
+public record CodecOptions(int fps, int bitRate, int width, int height, int compliance, String preset, String tune) {
     public CodecOptions(int fps, int bitRate, int width, int height, int compliance, String preset, String tune) {
         this.fps = Math.max(fps, 1);
         this.bitRate = bitRate;
@@ -18,34 +10,6 @@ public class CodecOptions {
         this.compliance = compliance;
         this.preset = preset;
         this.tune = tune;
-    }
-
-    public int getFps() {
-        return fps;
-    }
-
-    public int getBitRate() {
-        return bitRate;
-    }
-
-    public int getWidth() {
-        return width;
-    }
-
-    public int getHeight() {
-        return height;
-    }
-
-    public int getCompliance() {
-        return compliance;
-    }
-
-    public String getPreset() {
-        return preset;
-    }
-
-    public String getTune() {
-        return tune;
     }
 
     public static class Builder {
@@ -83,6 +47,12 @@ public class CodecOptions {
 
         public Builder setCompliance(int compliance) {
             this.compliance = compliance;
+            return this;
+        }
+
+        // Convenience, unofficial provides widest range of pixel formats
+        public Builder setComplianceUnofficial() {
+            this.compliance = FF_COMPLIANCE_UNOFFICIAL;
             return this;
         }
 

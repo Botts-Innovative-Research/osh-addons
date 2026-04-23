@@ -1,34 +1,20 @@
 package org.sensorhub.impl.process.video.transcoder.helpers;
 
-public class CodecInfo {
-    private FullCodecEnum codec;
-    private FullPixelEnum pixelFmt;
-
-    public CodecInfo(String name) {
+public record CodecInfo(FullCodecEnum codec, FullPixelEnum pixelFmt) {
+    public static CodecInfo newCodecInfoFromName(String name) {
+        FullCodecEnum codec;
+        FullPixelEnum pixel;
         try {
-            this.codec = Enum.valueOf(FullCodecEnum.class, name);
-            // YUVJ works best here
-            if (this.codec == FullCodecEnum.MJPEG)
-                this.pixelFmt = FullPixelEnum.YUVJ420P;
+            codec = Enum.valueOf(FullCodecEnum.class, name);
+            if (codec == FullCodecEnum.MJPEG)
+                pixel = FullPixelEnum.YUVJ420P;
             else
-                this.pixelFmt = FullPixelEnum.YUV420P;
-
+                pixel = FullPixelEnum.YUV420P;
         } catch (Exception e) {
-            this.codec = FullCodecEnum.RAWVIDEO;
-            this.pixelFmt = Enum.valueOf(FullPixelEnum.class, name);
+            codec = FullCodecEnum.RAWVIDEO;
+            pixel = Enum.valueOf(FullPixelEnum.class, name);
         }
-    }
 
-    public CodecInfo(FullCodecEnum codec, FullPixelEnum pixelFmt) {
-        this.codec = codec;
-        this.pixelFmt = pixelFmt;
-    }
-
-    public FullCodecEnum getCodec() {
-        return codec;
-    }
-
-    public FullPixelEnum getPixelFmt() {
-        return pixelFmt;
+        return new CodecInfo(codec, pixel);
     }
 }

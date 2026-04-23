@@ -323,8 +323,8 @@ public class FFMpegTranscoder extends ExecutableProcessImpl
         {
             //inCodec = CodecEnum.valueOf(inCodecParam.getData().getStringValue().toUpperCase());
             //outCodec = CodecEnum.valueOf(outCodecParam.getData().getStringValue().toUpperCase());
-            inCodec = new CodecInfo(inCodecParam.getData().getStringValue());
-            outCodec = new CodecInfo(outCodecParam.getData().getStringValue());
+            inCodec = CodecInfo.newCodecInfoFromName(inCodecParam.getData().getStringValue());
+            outCodec = CodecInfo.newCodecInfoFromName(outCodecParam.getData().getStringValue());
 
             setImgEncoding();
             initCodecOptions();
@@ -376,9 +376,11 @@ public class FFMpegTranscoder extends ExecutableProcessImpl
         }
 
         decOptions = decOptionBuilder.setFps(fps).setBitRate(bitrate)
-                .setWidth(width).setHeight(height).presetUltraFast().tuneZeroLatency().build();
+                .setWidth(width).setHeight(height).presetUltraFast().tuneZeroLatency()
+                .setComplianceUnofficial().build();
         encOptions = encOptionBuilder.setFps(fps).setBitRate(bitrate)
-                .setWidth(outWidth).setHeight(outHeight).presetUltraFast().tuneZeroLatency().build();
+                .setWidth(outWidth).setHeight(outHeight).presetUltraFast().tuneZeroLatency()
+                .setComplianceUnofficial().build();
     }
 
     /**
@@ -393,7 +395,7 @@ public class FFMpegTranscoder extends ExecutableProcessImpl
     private AVByteFormatter getFormatter(CodecInfo codec, @Nullable Integer width, @Nullable Integer height) throws ProcessException {
         try {
             int pixFmt;
-            if ((pixFmt = codec.getPixelFmt().ffmpegId) != AV_PIX_FMT_NONE)
+            if ((pixFmt = codec.pixelFmt().ffmpegId) != AV_PIX_FMT_NONE)
                 return new FrameFormatter(width, height, pixFmt);
             else
                 return new PacketFormatter();
@@ -415,7 +417,7 @@ public class FFMpegTranscoder extends ExecutableProcessImpl
      * @return Is the codec {@link CodecEnum#RGB} or {@link CodecEnum#YUV}?
      */
     private boolean isUncompressed(CodecInfo codec) {
-        return codec.getCodec() == FullCodecEnum.RAWVIDEO;
+        return codec.codec() == FullCodecEnum.RAWVIDEO;
     }
 
     /**

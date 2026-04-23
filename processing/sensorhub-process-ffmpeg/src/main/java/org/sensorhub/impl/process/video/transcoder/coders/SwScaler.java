@@ -32,8 +32,8 @@ public class SwScaler extends Coder<AVFrame, AVFrame> {
 
     @Override
     protected void initContext() {
-        swsContext = sws_getContext(inWidth, inHeight, inputFormat.getPixelFmt().ffmpegId,
-                outWidth, outHeight, outputFormat.getPixelFmt().ffmpegId,
+        swsContext = sws_getContext(inWidth, inHeight, inputFormat.pixelFmt().ffmpegId,
+                outWidth, outHeight, outputFormat.pixelFmt().ffmpegId,
                 SWS_BICUBIC, null, null, (DoublePointer) null);
     }
 

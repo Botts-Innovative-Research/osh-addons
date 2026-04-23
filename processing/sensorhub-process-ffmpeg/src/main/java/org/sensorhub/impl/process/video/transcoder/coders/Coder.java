@@ -62,6 +62,7 @@ public abstract class Coder<I extends Pointer, O extends Pointer> implements Aut
 
         this.inputFormat = inFormatInfo;
         this.inputClass = inputClass;
+        this.outputFormat = outFormatInfo;
         this.outputClass = outputClass;
         this.options = options;
 
@@ -94,16 +95,16 @@ public abstract class Coder<I extends Pointer, O extends Pointer> implements Aut
      */
     protected void initOptions() {
 
-        codec_ctx.time_base(av_make_q(1, options.getFps()));
+        codec_ctx.time_base(av_make_q(1, options.fps()));
 
-        if (options.getBitRate() > 0) {
-            codec_ctx.bit_rate(options.getBitRate() * 1000);
+        if (options.bitRate() > 0) {
+            codec_ctx.bit_rate(options.bitRate() * 1000);
         } else {
             //codec_ctx.bit_rate(150*1000);
         }
 
-        codec_ctx.width(options.getWidth());
-        codec_ctx.height(options.getHeight());
+        codec_ctx.width(options.width());
+        codec_ctx.height(options.height());
 
         /*
         if (options.containsKey("pix_fmt")) {
@@ -118,9 +119,9 @@ public abstract class Coder<I extends Pointer, O extends Pointer> implements Aut
 
          */
 
-        av_opt_set(codec_ctx.priv_data(), "preset", "ultrafast", 0);
-        av_opt_set(codec_ctx.priv_data(), "tune", "zerolatency", 0);
-        codec_ctx.strict_std_compliance(FF_COMPLIANCE_UNOFFICIAL); // Needed so that yuvj420p works (used for mjpeg)
+        av_opt_set(codec_ctx.priv_data(), "preset", options.preset(), 0);
+        av_opt_set(codec_ctx.priv_data(), "tune", options.tune(), 0);
+        codec_ctx.strict_std_compliance(options.compliance()); // Needed so that yuvj420p works (used for mjpeg)
     }
 
     protected abstract void deallocateInputPacket(I packet);

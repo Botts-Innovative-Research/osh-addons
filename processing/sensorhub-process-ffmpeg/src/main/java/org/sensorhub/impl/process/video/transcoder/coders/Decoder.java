@@ -25,9 +25,9 @@ public class Decoder extends Coder<AVPacket, AVFrame> {
     @Override
     protected void initContext() {
         synchronized (contextLock) {
-            codec = avcodec_find_decoder(inputFormat.getCodec().ffmpegId);;
+            codec = avcodec_find_decoder(inputFormat.codec().ffmpegId);;
             codec_ctx = avcodec_alloc_context3(codec);
-            codec_ctx.pix_fmt(outputFormat.getPixelFmt().ffmpegId);
+            codec_ctx.pix_fmt(outputFormat.pixelFmt().ffmpegId);
         }
     }
 
