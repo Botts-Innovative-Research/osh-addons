@@ -17,19 +17,19 @@ package org.sensorhub.impl.process.video.transcoder;
 import net.opengis.swe.v20.*;
 import org.bytedeco.ffmpeg.avcodec.AVPacket;
 import org.bytedeco.ffmpeg.avutil.AVFrame;
+import org.bytedeco.ffmpeg.global.avcodec;
+import org.bytedeco.ffmpeg.global.avutil;
 import org.bytedeco.javacpp.BytePointer;
-import org.bytedeco.javacpp.DoublePointer;
 import org.bytedeco.javacpp.Pointer;
-import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.api.processing.OSHProcessInfo;
 import org.sensorhub.impl.process.video.transcoder.coders.Coder;
 import org.sensorhub.impl.process.video.transcoder.coders.Decoder;
 import org.sensorhub.impl.process.video.transcoder.coders.Encoder;
 import org.sensorhub.impl.process.video.transcoder.coders.SwScaler;
-import org.sensorhub.impl.process.video.transcoder.formatters.AVByteFormatter;
-import org.sensorhub.impl.process.video.transcoder.formatters.PacketFormatter;
-import org.sensorhub.impl.process.video.transcoder.formatters.RgbFormatter;
-import org.sensorhub.impl.process.video.transcoder.formatters.YuvFormatter;
+import org.sensorhub.impl.process.video.transcoder.formatters.*;
+import org.sensorhub.impl.process.video.transcoder.helpers.CodecInfo;
+import org.sensorhub.impl.process.video.transcoder.helpers.CodecOptions;
+import org.sensorhub.impl.process.video.transcoder.helpers.FullCodecEnum;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.vast.data.DataBlockCompressed;
@@ -39,13 +39,10 @@ import org.vast.swe.SWEHelper;
 import org.vast.swe.helper.RasterHelper;
 
 import javax.annotation.Nullable;
-import java.nio.ByteBuffer;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import static org.bytedeco.ffmpeg.global.avcodec.*;
 import static org.bytedeco.ffmpeg.global.avutil.*;
-import static org.bytedeco.ffmpeg.global.swscale.*;
 
 /**
  * <p>
@@ -73,18 +70,14 @@ public class FFMpegTranscoder extends ExecutableProcessImpl
     Text inCodecParam;
     Text outCodecParam;
 
-    List<Coder<?, ?>> videoProcs;
-    AVByteFormatter<Pointer> inputFormatter, outputFormatter;
-    ArrayDeque<Pointer> inputPackets;
-    ArrayDeque<Pointer> outputPackets;
-    Thread outputThread;
+    List<Coder> videoProcs;
+    AVByteFormatter inputFormatter, outputFormatter;
 
-    HashMap<String, Integer> decOptions = new HashMap<>();
-    HashMap<String, Integer> encOptions = new HashMap<>();
+    CodecOptions decOptions, encOptions;
 
     final boolean publish = false;
-    CodecEnum inCodec;
-    CodecEnum outCodec;
+    CodecInfo inCodec;
+    CodecInfo outCodec;
     RasterHelper swe = new RasterHelper();
 
     int width, height, outWidth, outHeight;
@@ -122,13 +115,13 @@ public class FFMpegTranscoder extends ExecutableProcessImpl
         paramData.add("inCodec", inCodecParam = swe.createText()
                 .definition(SWEHelper.getPropertyUri("Codec"))
                 .label("Input Codec Name")
-                .addAllowedValues(CodecEnum.class)
+                //.addAllowedValues(CodecEnum.class)
                 .build());
 
         paramData.add("outCodec", outCodecParam = swe.createText()
                 .definition(SWEHelper.getPropertyUri("Codec"))
                 .label("Output Codec Name")
-                .addAllowedValues(CodecEnum.class)
+                //.addAllowedValues(CodecEnum.class)
                 .build());
 
         // outputs
@@ -156,13 +149,18 @@ public class FFMpegTranscoder extends ExecutableProcessImpl
 
     }
 
+    private void initFormatters() throws ProcessException {
+        inputFormatter = getFormatter(inCodec, width, height);
+        outputFormatter = getFormatter(outCodec, outWidth, outHeight);
+    }
+
     /**
      * Initializes all encoder/decoder/swscaler objects. These objects are added to the {@link FFMpegTranscoder#videoProcs}
      * queue in the order they should process the incoming data. At most, the flow will be Decoder -> SWScale -> Encoder.
      */
     private void initCoders() {
         try {
-            stopProcessThreads();
+            stopProcessing();
         } catch (Exception e){
             logger.error("Transcoder could not stop process threads during re-init.", e);
         }
@@ -172,30 +170,31 @@ public class FFMpegTranscoder extends ExecutableProcessImpl
         videoProcs = new ArrayList<>();
 
         if (!isUncompressed(inCodec)) {
-            videoProcs.add(new Decoder(inCodec.ffmpegId, decOptions));
+            videoProcs.add(new Decoder(inCodec, outCodec, decOptions));
         }
         if (width != outWidth || height != outHeight || (isUncompressed(inCodec) && isUncompressed(outCodec))) {
-            int inFmt = isUncompressed(inCodec) ? inCodec.ffmpegId : AV_PIX_FMT_YUV420P;
-            int outFmt = isUncompressed(outCodec) ? outCodec.ffmpegId : AV_PIX_FMT_YUV420P;
-            videoProcs.add(new SwScaler(inFmt, outFmt, width, height, outWidth, outHeight));
+            //int inFmt = isUncompressed(inCodec) ? inCodec.getCodec().ffmpegId : AV_PIX_FMT_YUV420P;
+            //int outFmt = isUncompressed(outCodec) ? outCodec.getCodec().ffmpegId : AV_PIX_FMT_YUV420P;
+            videoProcs.add(new SwScaler(inCodec, outCodec, width, height, outWidth, outHeight));
         }
         if (!isUncompressed(outCodec)) {
-            videoProcs.add(new Encoder(outCodec.ffmpegId, encOptions));
+            Encoder encoder = new Encoder(inCodec, outCodec, decOptions);
+            videoProcs.add(encoder);
         }
 
-        inputPackets = new ArrayDeque<>();
-        if (videoProcs.get(0) != null) {
-            videoProcs.get(0).setInQueue(inputPackets);
+        // Frame pipe between decoder, swscaler, encoder
+        for (int i = 0; i < videoProcs.size() - 1; i++) {
+            var nextProc = videoProcs.get(i + 1);
+            videoProcs.get(i).registerCallback(packet -> {
+                nextProc.submitInputPacket(packet);
+            });
         }
-        for (int i = 1; i < videoProcs.size(); i++) {
-            videoProcs.get(i).setInQueue(videoProcs.get(i - 1).getOutQueue());
-        }
-        try {
-            outputPackets = (ArrayDeque<Pointer>) videoProcs.get(videoProcs.size() - 1).getOutQueue();
-        } catch (Exception e) {
-            logger.warn("No processes running on video input. Check codec/resolution settings.", e);
-            outputPackets = inputPackets;
-        }
+
+        // Output
+        videoProcs.get(videoProcs.size() - 1).registerCallback(packet -> {
+            publishFrameData(outputFormatter.convertOutput(packet));
+        });
+
     }
 
     /**
@@ -204,14 +203,9 @@ public class FFMpegTranscoder extends ExecutableProcessImpl
      */
     private void startProcessThreads() {
         doRun.set(true);
-        if (videoProcs == null || videoProcs.isEmpty() || videoProcs.get(0).getState() != Thread.State.NEW) {
+        if (videoProcs == null || videoProcs.isEmpty()) {
             initCoders();
         }
-
-        for (Thread process : videoProcs) {
-            process.start();
-        }
-        outputThread.start();
 
         isRunning.set(true);
     }
@@ -220,16 +214,15 @@ public class FFMpegTranscoder extends ExecutableProcessImpl
      * Invoked on process stop and init.
      * Stop all {@link Coder} thread objects stored in {@link FFMpegTranscoder#videoProcs}.
      */
-    private void stopProcessThreads() throws InterruptedException {
+    private void stopProcessing() throws InterruptedException {
         doRun.set(false); //TODO These atomic booleans may be entirely unnecessary, remove
         if (videoProcs != null) {
-            for (Thread thread : videoProcs) {
-                thread.interrupt();
-                thread.join();
+            for (Coder codec : videoProcs) {
+                codec.close();
             }
+            videoProcs.clear();
         }
-        outputThread.interrupt();
-        outputThread.join();
+
         isRunning.set(false);
     }
 
@@ -268,7 +261,7 @@ public class FFMpegTranscoder extends ExecutableProcessImpl
     public void stop() {
         if (isRunning.get()) {
             try {
-                stopProcessThreads();
+                stopProcessing();
             } catch (InterruptedException e) {
                 logger.warn("Interrupted while stopping process threads");
             }
@@ -328,19 +321,15 @@ public class FFMpegTranscoder extends ExecutableProcessImpl
         // TODO: Automatically detect input codec from compression in data struct?
         try
         {
-            inCodec = CodecEnum.valueOf(inCodecParam.getData().getStringValue().toUpperCase());
-            outCodec = CodecEnum.valueOf(outCodecParam.getData().getStringValue().toUpperCase());
+            //inCodec = CodecEnum.valueOf(inCodecParam.getData().getStringValue().toUpperCase());
+            //outCodec = CodecEnum.valueOf(outCodecParam.getData().getStringValue().toUpperCase());
+            inCodec = new CodecInfo(inCodecParam.getData().getStringValue());
+            outCodec = new CodecInfo(outCodecParam.getData().getStringValue());
 
             setImgEncoding();
-
             initCodecOptions();
-
-            // processThreads are always running, passing available data from decoder to encoder and encoder to output
+            initFormatters();
             initCoders();
-            outputThread = new Thread(this::outputProcess);
-
-            inputFormatter = getFormatter(inCodec, width, height);
-            outputFormatter = getFormatter(outCodec, outWidth, outHeight);
 
             imgOut.setData(new DataBlockCompressed());
         }
@@ -356,36 +345,14 @@ public class FFMpegTranscoder extends ExecutableProcessImpl
      * Creates maps of options for the encoder/decoder, including framerate, pixel format, bitrate, and image size.
      */
     private void initCodecOptions() {
-        decOptions = new HashMap<>();
-        encOptions = new HashMap<>();
+        var decOptionBuilder = new CodecOptions.Builder();
+        var encOptionBuilder = new CodecOptions.Builder();
 
         //DataComponent temp;
         int fps = safeGetCountVal(inputFps);
-        if (fps > 0) {
-            decOptions.put("fps", fps);
-            encOptions.put("fps", fps);
-        }
-
-        encOptions.put("pix_fmt", AV_PIX_FMT_YUV420P);
-        decOptions.put("pix_fmt", AV_PIX_FMT_YUV420P);
-
         int bitrate = safeGetCountVal(inputBitrate);
-        if (bitrate > 0) {
-            decOptions.put("bit_rate", bitrate);
-            encOptions.put("bit_rate", bitrate); // Just assuming input br is the same as out, could this change?
-        }
-
         width = safeGetCountVal(inputWidth);
-        if (width <= 0) {
-            width = imgIn.getComponent("row").getComponentCount();
-        }
-        decOptions.put("width", width);
-
         height = safeGetCountVal(inputHeight);
-        if (height <= 0) {
-            height = imgIn.getComponentCount();
-        }
-        decOptions.put("height", height);
 
 
         outHeight = safeGetCountVal(outputHeight);
@@ -393,13 +360,9 @@ public class FFMpegTranscoder extends ExecutableProcessImpl
             try {
                 outHeight = imgOut.getComponentCount();
             } catch (Exception ignored) {
-                outHeight = 0;
+                outHeight = height;
+                logger.warn("Output height not specified, using input height");
             }
-        }
-        if (outHeight > 0) {
-            encOptions.put("height", outHeight);
-        } else {
-            encOptions.put("height", height);
         }
 
         outWidth = safeGetCountVal(outputWidth);
@@ -407,14 +370,15 @@ public class FFMpegTranscoder extends ExecutableProcessImpl
             try {
                 outWidth = imgIn.getComponent("row").getComponentCount();
             } catch (Exception ignored) {
-                outWidth = 0;
+                outWidth = width;
+                logger.warn("Output width not specified, using input width");
             }
         }
-        if (outWidth > 0) {
-            encOptions.put("width", outWidth);
-        } else {
-            encOptions.put("width", width);
-        }
+
+        decOptions = decOptionBuilder.setFps(fps).setBitRate(bitrate)
+                .setWidth(width).setHeight(height).presetUltraFast().tuneZeroLatency().build();
+        encOptions = encOptionBuilder.setFps(fps).setBitRate(bitrate)
+                .setWidth(outWidth).setHeight(outHeight).presetUltraFast().tuneZeroLatency().build();
     }
 
     /**
@@ -426,13 +390,20 @@ public class FFMpegTranscoder extends ExecutableProcessImpl
      * @return Formatter object.
      * @throws ProcessException Thrown when width and height are not provided for an uncompressed format.
      */
-    private AVByteFormatter getFormatter(CodecEnum codec, @Nullable Integer width, @Nullable Integer height) throws ProcessException {
+    private AVByteFormatter getFormatter(CodecInfo codec, @Nullable Integer width, @Nullable Integer height) throws ProcessException {
         try {
+            int pixFmt;
+            if ((pixFmt = codec.getPixelFmt().ffmpegId) != AV_PIX_FMT_NONE)
+                return new FrameFormatter(width, height, pixFmt);
+            else
+                return new PacketFormatter();
+            /*
             return switch (codec) {
                 case RGB -> new RgbFormatter(width, height);
                 case YUV -> new YuvFormatter(width, height);
                 default -> new PacketFormatter();
             };
+             */
         } catch (NullPointerException e) {
             reportError("Raw formatter for " + codec + " requires non-null width and height.", e);
         }
@@ -443,8 +414,8 @@ public class FFMpegTranscoder extends ExecutableProcessImpl
      * @param codec Video codec or uncompressed format.
      * @return Is the codec {@link CodecEnum#RGB} or {@link CodecEnum#YUV}?
      */
-    private boolean isUncompressed(CodecEnum codec) {
-        return codec == CodecEnum.RGB || codec == CodecEnum.YUV;
+    private boolean isUncompressed(CodecInfo codec) {
+        return codec.getCodec() == FullCodecEnum.RAWVIDEO;
     }
 
     /**
@@ -503,42 +474,15 @@ public class FFMpegTranscoder extends ExecutableProcessImpl
             logger.warn("Input image is null");
             return;
         }
+
         // Start the threads if not already started
         if (!isRunning.get()) {
             startProcessThreads();
         }
 
-        inputPackets.add(
-                inputFormatter.convertInput(
-                        ((DataBlockCompressed)imgIn.getData()).getUnderlyingObject().clone()
-                ));
-
-    }
-
-    /**
-     * Runs inside a separate thread. Receives any {@link AVPacket}s or {@link AVFrame}s from the last {@link Coder}
-     * in the {@link FFMpegTranscoder#videoProcs} queue, converts the struct to bytes, and publishes the data.
-     * @see FFMpegTranscoder#publishFrameData(byte[])
-     */
-    private void outputProcess() {
-        while (doRun.get() && !Thread.currentThread().isInterrupted()) {
-            while (outputPackets == null || outputPackets.isEmpty()) {
-                if (Thread.currentThread().isInterrupted()) {
-                    return;
-                }
-                Thread.onSpinWait();
-            }
-            if (outputPackets != null && !outputPackets.isEmpty()) {
-                for (var packet : outputPackets) {
-                    if (Thread.currentThread().isInterrupted()) {
-                        return;
-                    }
-                    publishFrameData(outputFormatter.convertOutput(outputPackets.poll()));
-                    //frameData = null;
-                    //packet = null;
-                }
-            }
-        }
+        videoProcs.get(0).submitInputPacket(
+                inputFormatter.convertInput(((DataBlockCompressed)imgIn.getData()).getUnderlyingObject().clone())
+        );
     }
 
     @Override
@@ -556,21 +500,8 @@ public class FFMpegTranscoder extends ExecutableProcessImpl
         doRun.set(false);
 
         if (videoProcs != null) {
-            for (Thread t : videoProcs) {
-                t.interrupt();
-                try {
-                    t.join();
-                } catch (InterruptedException e) {
-                    logger.error("Error waiting for process thread {} to finish", t.getName());
-                }
-            }
-        }
-        if (outputThread != null) {
-            outputThread.interrupt();
-            try {
-                outputThread.join();
-            } catch (InterruptedException e) {
-                logger.error("Error waiting for process thread {} to finish", outputThread.getName());
+            for (Coder proc : videoProcs) {
+                proc.close();
             }
         }
     }
