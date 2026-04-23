@@ -46,7 +46,7 @@ public abstract class Coder<I extends Pointer, O extends Pointer> implements Aut
     protected I inPacket;
     protected O outPacket;
     protected final Queue<O> outQueue = new ArrayDeque<>(10);
-    private AtomicBoolean isProcessing = new AtomicBoolean(true); // Set false to indicate packets should no longer be accepted
+    private final AtomicBoolean isProcessing = new AtomicBoolean(true); // Set false to indicate packets should no longer be accepted
     final Object contextLock = new Object();
     Class<I> inputClass;
     Class<O> outputClass;
@@ -56,9 +56,13 @@ public abstract class Coder<I extends Pointer, O extends Pointer> implements Aut
     public Coder(CodecInfo inFormatInfo, CodecInfo outFormatInfo, Class<I> inputClass, Class<O> outputClass, CodecOptions options) {
         super();
 
-        assert inputClass == AVPacket.class || inputClass == AVFrame.class;
-        assert outputClass == AVPacket.class || outputClass == AVFrame.class;
-        assert options != null;
+        if ((inputClass != AVPacket.class && inputClass != AVFrame.class)
+        || (outputClass != AVPacket.class && outputClass != AVFrame.class)) {
+            throw new IllegalArgumentException("Input and output classes must be either AVPacket or AVFrame");
+        }
+
+        if (options == null)
+            throw new IllegalArgumentException("Options cannot be null");
 
         this.inputFormat = inFormatInfo;
         this.inputClass = inputClass;
