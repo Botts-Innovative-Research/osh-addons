@@ -164,10 +164,10 @@ public class KrakenSdrSensor extends AbstractSensorModule<KrakenSdrConfig> {
             switch (type) {
                 case "doa":
                     krakenSdrOutputDoA.setData(msg);
-                    break;;
+                    break;
                 case "settings":
                     krakenSdrOutputSettings.setData(msg);
-                    break;;
+                    break;
                 case "spectrum":
                     // Spectrum Output Needed
                     break;
