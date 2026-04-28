@@ -63,12 +63,6 @@ public class KrakenSdrSensor extends AbstractSensorModule<KrakenSdrConfig> {
         SETTINGS_URL = OUTPUT_URL + "/settings.json";
         WS_URL = "ws://" + config.krakenIPaddress + ":" + config.krakenWsPort + "/ws/kraken";
 
-        // INITIALIZE UTILITY
-        util = new KrakenUtility(this);
-
-        // VALIDATE KRAKEN CONNECTIVITY
-        util.getSettings();
-
         // INITIALIZE CONTROLS
         krakenSdrControlReceiver = new KrakenSdrControlReceiver(this);
         addControlInput(krakenSdrControlReceiver);
