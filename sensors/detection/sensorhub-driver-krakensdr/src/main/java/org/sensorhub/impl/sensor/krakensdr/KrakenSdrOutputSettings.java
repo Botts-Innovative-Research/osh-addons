@@ -37,7 +37,6 @@ public class KrakenSdrOutputSettings extends AbstractSensorOutput<KrakenSdrSenso
     private long lastSetTimeMillis = System.currentTimeMillis();
     private DataRecord dataStruct;
     private DataEncoding dataEncoding;
-    KrakenUtility util = parentSensor.util;
 
     /**
      * Creates a new output for the sensor driver.
@@ -61,20 +60,16 @@ public class KrakenSdrOutputSettings extends AbstractSensorOutput<KrakenSdrSenso
                 .name(SENSOR_OUTPUT_NAME)
                 .label(SENSOR_OUTPUT_LABEL)
                 .description(SENSOR_OUTPUT_DESCRIPTION)
-                .definition(SWEHelper.getPropertyUri("settingsOutput"))
+                .definition(SWEHelper.getPropertyUri("krakenSettingsOutput"))
                 .addField("time", sweFactory.createTime()
                         .asSamplingTimeIsoUTC()
                         .label("OSH Collection Time")
                         .description("Timestamp of when OSH took a reading of the current settings")
                         .definition(SWEHelper.getPropertyUri("Time")))
-                .addField("enRemoteControl", sweFactory.createBoolean()
-                        .label("Remote Control Enabled")
-                        .description("If 'false', the control for this node will not work. Adjust settings of KrakenSDR DSP application")
-                        .definition(SWEHelper.getPropertyUri("EnRemoteControl")))
-                .addField("receiverConfig", sweFactory.createRecord()
+                .addField("receiverConfigSettings", sweFactory.createRecord()
                         .label("RF Receiver Configuration")
                         .description("Data Record for the RF Receiver Configuration")
-                        .definition(SWEHelper.getPropertyUri("ReceiverConfig"))
+                        .definition(SWEHelper.getPropertyUri("ReceiverConfigSettings"))
                         .addField("centerFreq", sweFactory.createQuantity()
                                 .uomCode("MHz")
                                 .label("Center Frequency")
@@ -99,10 +94,64 @@ public class KrakenSdrOutputSettings extends AbstractSensorOutput<KrakenSdrSenso
                                 .label("Antenna Array Radius")
                                 .description("Current spacing of the Antenna Array")
                                 .definition(SWEHelper.getPropertyUri("AntennaSpacingMeter")))
+                        .addField("doaEnabled", sweFactory.createBoolean()
+                                .label("DoA Estimation Enabled")
+                                .description("Boolean on if DoA Estimation is enabled on kraken software")
+                                .definition(SWEHelper.getPropertyUri("DoaEnabled")))
                         .addField("doaMethod", sweFactory.createText()
                                 .label("DoA Algorithm")
                                 .description("Algorithm used for DoA calculation")
                                 .definition(SWEHelper.getPropertyUri("DoaMethod")))
+                        .addField("doaDecorrelationMethod", sweFactory.createText()
+                                .label("DoA Decorrelation Method")
+                                .description("Decorrelation method used for DoA calculation")
+                                .definition(SWEHelper.getPropertyUri("DoaDecorrelationMethod")))
+                        .addField("ulaDirection", sweFactory.createText()
+                                .label("ULA Output Direction")
+                                .description("ULA Output Direction")
+                                .definition(SWEHelper.getPropertyUri("UlaDirection")))
+                        .addField("arrayOffset", sweFactory.createQuantity()
+                                .uom("deg")
+                                .label("Antenna Array Offset")
+                                .description("Current Offset in degrees")
+                                .definition(SWEHelper.getPropertyUri("ArrayOffset")))
+                        .addField("expectedNumOfSources", sweFactory.createQuantity()
+                                .label("Expected Number of Sources")
+                                .description("Expected Number of Sources (1-4)")
+                                .definition(SWEHelper.getPropertyUri("ExpectedNumberOfSources")))
+                )
+                .addField("vfoConfigSettings", sweFactory.createRecord()
+                        .label("VFO Configuration Settings")
+                        .description("Data Record for the Variable Frequency Oscillator Configuration Settings")
+                        .definition(SWEHelper.getPropertyUri("VfoConfigSettings"))
+                        .addField("spectrumCalculation", sweFactory.createText()
+                                .label("Spectrum Calculation")
+                                .description("Spectrum Calculation")
+                                .definition(SWEHelper.getPropertyUri("SpectrumCalculation")))
+                        .addField("vfoMode", sweFactory.createText()
+                                .label("VFO Mode")
+                                .description("VFO Mode")
+                                .definition(SWEHelper.getPropertyUri("VfoMode")))
+                        .addField("vfoDefaultSquelchMode", sweFactory.createText()
+                                .label("VFO Default Squelch Mode")
+                                .description("VFO Default Squelch Mode (Auto, Manual, Auto Channel")
+                                .definition(SWEHelper.getPropertyUri("VfoDefaultSquelchMode")))
+                        .addField("activeVfos", sweFactory.createQuantity()
+                                .label("Active VFO's")
+                                .description("Active VFO's(1-16)")
+                                .definition(SWEHelper.getPropertyUri("ActiveVfos")))
+                        .addField("outputVfos", sweFactory.createQuantity()
+                                .label("Output VFO's")
+                                .description("Output VFO's(-1 for all, 0-15)")
+                                .definition(SWEHelper.getPropertyUri("OutputVfos")))
+                        .addField("dspDecimation", sweFactory.createQuantity()
+                                .label("DSP Decimation")
+                                .description("DSP Decimation (≥1)")
+                                .definition(SWEHelper.getPropertyUri("DspDecimation")))
+                        .addField("optimizeShortBursts", sweFactory.createBoolean()
+                                .label("Optimize Short Bursts")
+                                .description("Optimize Short Bursts")
+                                .definition(SWEHelper.getPropertyUri("optimizeShortBursts")))
                 )
                 .addField("stationConfig", sweFactory.createRecord()
                         .label("Station Configuration")
@@ -117,6 +166,11 @@ public class KrakenSdrOutputSettings extends AbstractSensorOutput<KrakenSdrSenso
                                 .description("Current Location Source for the Kraken Station")
                                 .definition(SWEHelper.getPropertyUri("locationSource")))
                         .addField("location", geoFac.createLocationVectorLatLon())
+                        .addField("heading", sweFactory.createQuantity()
+                                .label("Heading")
+                                .uom("deg")
+                                .description("Heading in degrees")
+                                .definition(SWEHelper.getPropertyUri("Heading")))
                 );
 
 
@@ -146,7 +200,12 @@ public class KrakenSdrOutputSettings extends AbstractSensorOutput<KrakenSdrSenso
         return accumulator / (double) MAX_NUM_TIMING_SAMPLES;
     }
 
-    public void setData() {
+    /**
+     * Called by {@link KrakenSdrSensor} when a WebSocket {@code "settings"} message arrives.
+     *
+     * @param settingsMsg the parsed JSON object from the WebSocket frame
+     */
+    public void setData(JsonObject settingsMsg) {
         DataBlock dataBlock;
         try {
             if (latestRecord == null) {
@@ -163,24 +222,34 @@ public class KrakenSdrOutputSettings extends AbstractSensorOutput<KrakenSdrSenso
             }
             ++setCount;
 
-            // RETRIEVE CURRENT JSON SETTINGS AS A JSON OBJECT
-            JsonObject currentSettings = util.getSettings();
+            // Use the timestamp embedded in the WS message when available
+            long tsMs = settingsMsg.has("timestamp")
+                    ? settingsMsg.get("timestamp").getAsLong()
+                    : System.currentTimeMillis();
 
-            if(currentSettings == null || currentSettings.entrySet().isEmpty()){
-                return;
-            }
-
-            dataBlock.setDoubleValue(0, System.currentTimeMillis() / 1000d);                                  // time
-            dataBlock.setBooleanValue(1, currentSettings.get("en_remote_control").getAsBoolean());
-            dataBlock.setDoubleValue(2, currentSettings.get("center_freq").getAsDouble());
-            dataBlock.setDoubleValue(3, currentSettings.get("uniform_gain").getAsDouble());
-            dataBlock.setStringValue(4, currentSettings.get("ant_arrangement").getAsString());
-            dataBlock.setDoubleValue(5, currentSettings.get("ant_spacing_meters").getAsDouble());
-            dataBlock.setStringValue(6, currentSettings.get("doa_method").getAsString());
-            dataBlock.setStringValue(7, (currentSettings.get("station_id") != null) ? currentSettings.get("station_id").getAsString() : "NO Name");
-            dataBlock.setStringValue(8, currentSettings.get("location_source").getAsString());
-            dataBlock.setStringValue(9, currentSettings.get("latitude").getAsString());
-            dataBlock.setStringValue(10, currentSettings.get("longitude").getAsString());
+            dataBlock.setDoubleValue(0, tsMs/1000d);
+            dataBlock.setDoubleValue(1, settingsMsg.get("center_freq").getAsDouble());
+            dataBlock.setDoubleValue(2, settingsMsg.get("uniform_gain").getAsDouble());
+            dataBlock.setStringValue(3, settingsMsg.get("ant_arrangement").getAsString());
+            dataBlock.setDoubleValue(4, settingsMsg.get("ant_spacing_meters").getAsDouble());
+            dataBlock.setBooleanValue(5,settingsMsg.get("en_doa").getAsBoolean());
+            dataBlock.setStringValue(6, settingsMsg.get("doa_method").getAsString());
+            dataBlock.setStringValue(7, settingsMsg.get("doa_decorrelation_method").getAsString());
+            dataBlock.setStringValue(8, settingsMsg.get("ula_direction").getAsString());
+            dataBlock.setIntValue(9, settingsMsg.get("array_offset").getAsInt());
+            dataBlock.setIntValue(10, settingsMsg.get("expected_num_of_sources").getAsInt());
+            dataBlock.setStringValue(11, settingsMsg.get("spectrum_calculation").getAsString());
+            dataBlock.setStringValue(12, settingsMsg.get("vfo_mode").getAsString());
+            dataBlock.setStringValue(13, settingsMsg.get("vfo_default_squelch_mode").getAsString());
+            dataBlock.setIntValue(14, settingsMsg.get("active_vfos").getAsInt());
+            dataBlock.setIntValue(15, settingsMsg.get("output_vfo").getAsInt());
+            dataBlock.setIntValue(16, settingsMsg.get("dsp_decimation").getAsInt());
+            dataBlock.setBooleanValue(17,settingsMsg.get("en_optimize_short_bursts").getAsBoolean());
+            dataBlock.setStringValue(18, settingsMsg.get("station_id").getAsString());
+            dataBlock.setStringValue(19, settingsMsg.get("location_source").getAsString());
+            dataBlock.setFloatValue(20, settingsMsg.get("latitude").getAsFloat());
+            dataBlock.setFloatValue(21, settingsMsg.get("longitude").getAsFloat());
+            dataBlock.setFloatValue(22, settingsMsg.get("heading").getAsFloat());
 
             latestRecord = dataBlock;
             latestRecordTime = System.currentTimeMillis();
@@ -188,7 +257,7 @@ public class KrakenSdrOutputSettings extends AbstractSensorOutput<KrakenSdrSenso
             eventHandler.publish(new DataEvent(latestRecordTime, KrakenSdrOutputSettings.this, dataBlock));
 
         } catch (Exception e) {
-            getLogger().error("Error reading from Kraken Device: {}", e.getMessage());
+            getLogger().error("Error processing KrakenSDR settings message: {}", e.getMessage());
         }
     }
 
