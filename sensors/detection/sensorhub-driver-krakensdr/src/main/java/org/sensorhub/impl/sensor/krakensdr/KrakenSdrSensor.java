@@ -151,30 +151,30 @@ public class KrakenSdrSensor extends AbstractSensorModule<KrakenSdrConfig> {
         t.start();
     }
 
-    private void handleWsMessage (String raw) {
-        try {
-            JsonObject msg = JsonParser.parseString(raw).getAsJsonObject();
-            String type = msg.has("type") ? msg.get("type").getAsString() : "";
-            switch (type) {
-                case "doa":
-                    krakenSdrOutputDoA.setData(msg);
-                    break;
-                case "settings":
-                    krakenSdrOutputSettings.setData(msg);
-                    break;
-                case "spectrum":
-                    // Spectrum Output Needed
-                    break;
-                default:
-                    getLogger().debug("Unknown KrakenSdr WS message type: '{}'", type);
-            }
-        } catch (Exception e) {
-            getLogger().error("Error processing KrakenSdr WebSocket Message", e);
-        }
-    }
 
     // Inner Class WebSocket Listener to keep reference clean
     private class KrakenWsListener implements WebSocket.Listener {
+        private void handleWsMessage (String raw) {
+            try {
+                JsonObject msg = JsonParser.parseString(raw).getAsJsonObject();
+                String type = msg.has("type") ? msg.get("type").getAsString() : "";
+                switch (type) {
+                    case "doa":
+                        krakenSdrOutputDoA.setData(msg);
+                        break;
+                    case "settings":
+                        krakenSdrOutputSettings.setData(msg);
+                        break;
+                    case "spectrum":
+                        // Spectrum Output Needed
+                        break;
+                    default:
+                        getLogger().debug("Unknown KrakenSdr WS message type: '{}'", type);
+                }
+            } catch (Exception e) {
+                getLogger().error("Error processing KrakenSdr WebSocket Message", e);
+            }
+        }
 
         @Override
         public void onOpen(WebSocket ws) {
