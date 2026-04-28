@@ -34,19 +34,18 @@ public class KrakenSdrConfig extends SensorConfig {
      */
     @DisplayInfo.Required
     @DisplayInfo(desc = "Serial number or unique identifier")
-    public String serialNumber = "kraken_rt";
+    public String serialNumber = "kraken001";
 
     @DisplayInfo.Required
     @DisplayInfo(label="Kraken IP Address", desc="Provide the shared IP Address assigned to the KrakenSD")
     public String krakenIPaddress = "localhost";
 
     @DisplayInfo.Required
-    @DisplayInfo(label="Kraken Data-out Port", desc="Provide the USB Port for your Sensor (Usually 8081)")
+    @DisplayInfo(label="Kraken HTTP Port", desc="ort for the KrakenSDR HTTP file server (settings.json / controls). Usually 8081.")
     public String krakenPort = "8081";
 
     @DisplayInfo.Required
-    @DisplayInfo(label="Sample Rate (seconds)", desc="Provide the USB Port for your Sensor (Usually 8081")
-    public int sampleRate = 2;
-
+    @DisplayInfo(label="Kraken WebSocket Port", desc="Port for the KrakenSDR WebSocket data stream. Usually 8082.")
+    public String krakenWsPort = "8082";
 
 }
