@@ -13,7 +13,13 @@ package org.sensorhub.impl.sensor.krakensdr;
 
 import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.impl.sensor.AbstractSensorModule;
-import java.util.concurrent.TimeUnit;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.WebSocket;
+import java.util.concurrent.CompletionStage;
+
 
 /**
  * Driver implementation for the sensor.
@@ -21,11 +27,10 @@ import java.util.concurrent.TimeUnit;
  * This class is responsible for providing sensor information, managing output registration,
  * and performing initialization and shutdown for the driver and its outputs.
  */
-public class KrakenSdrSensor extends AbstractSensorModule<KrakenSdrConfig> implements Runnable {
+public class KrakenSdrSensor extends AbstractSensorModule<KrakenSdrConfig> {
     static final String UID_PREFIX = "urn:osh:sensor:krakensdr:";
-    static final String XML_PREFIX = "krakenSDR";
+    static final String XML_PREFIX = "krakenSdr";
 
-    // GLOBAL VARIABLES FOR SENSOR OPERATION
     KrakenUtility util;
     KrakenSdrOutputSettings krakenSdrOutputSettings;
     KrakenSdrOutputDoA krakenSdrOutputDoA;
@@ -35,11 +40,14 @@ public class KrakenSdrSensor extends AbstractSensorModule<KrakenSdrConfig> imple
 
     String OUTPUT_URL;
     String SETTINGS_URL;
-    String DOA_CSV_URL;
-    String DOA_XML_URL;
-
+    String WS_URL;
 
     private volatile boolean keepRunning = false;
+    private HttpClient httpClient;
+    private WebSocket webSocket;
+
+    //Accumulates partial websocket text frames before dispatching
+    private final StringBuilder wsFrameBuffer = new StringBuilder();
 
     //  INITIALIZE
     @Override
@@ -53,8 +61,7 @@ public class KrakenSdrSensor extends AbstractSensorModule<KrakenSdrConfig> imple
         // THE KRAKEN GUI APPLICATION SERVES IT'S _SHARE DIRECTORY TO A SPECIFIC PORT. DEFINE STRUCTURE IN CONFIG TO USE IN APP
         OUTPUT_URL  = "http://" + config.krakenIPaddress + ":" + config.krakenPort;
         SETTINGS_URL = OUTPUT_URL + "/settings.json";
-        DOA_CSV_URL = OUTPUT_URL + "/DOA_value.html";
-        DOA_XML_URL = OUTPUT_URL + "/doa.xml";
+        WS_URL = "ws://" + config.krakenIPaddress + ":" + config.krakenWsPort + "/ws/kraken";
 
         // INITIALIZE UTILITY
         util = new KrakenUtility(this);
@@ -86,9 +93,7 @@ public class KrakenSdrSensor extends AbstractSensorModule<KrakenSdrConfig> imple
         krakenSdrOutputDoA = new KrakenSdrOutputDoA(this);
         addOutput(krakenSdrOutputDoA, false);
         krakenSdrOutputDoA.doInit();
-
     }
-
 
     @Override
     public void doStart() throws SensorHubException {
@@ -97,40 +102,120 @@ public class KrakenSdrSensor extends AbstractSensorModule<KrakenSdrConfig> imple
         // Set variable to continue readings
         keepRunning = true;
 
-        // CREATE THREAD THAT CONTINUALLY READS SENSOR REPORT
-        Thread readkrakenSDR = new Thread(this, "krakenSDR Worker");
-        readkrakenSDR.start();    // This starts the the run() method
+        httpClient = HttpClient.newHttpClient();
+        connectWebSocket();
     }
 
     @Override
     public void doStop() throws SensorHubException {
         keepRunning = false;
+        if (webSocket != null && !webSocket.isOutputClosed()){
+            webSocket.sendClose(WebSocket.NORMAL_CLOSURE, "shutdown");
+        }
         super.doStop();
     }
 
     @Override
     public boolean isConnected() {
-        return true;
+        return webSocket != null && !webSocket.isInputClosed();
     }
 
+    // WebSocket Connection
+    private void connectWebSocket() {
+        if (!keepRunning) return;
+        try {
+            getLogger().info("Connecting KrakenSDR WebSocket to {}", WS_URL);
+            httpClient.newWebSocketBuilder()
+                    .buildAsync(URI.create(WS_URL), new KrakenWsListener())
+                    .whenComplete((ws, err) -> {
+                        if (err != null) {
+                            getLogger().error("KrakenSDR WebSocket connect failed", err);
+                            scheduleReconnect();
+                        } else {
+                            webSocket = ws;
+                            getLogger().info("KrakenSDR WebSocket connected");
+                        }
+                    });
+        } catch (Exception e) {
+            getLogger().error("KrakenSDR WebSocket connect error", e);
+            scheduleReconnect();
+        }
+    }
 
-    @Override
-    public void run() {
-        while (keepRunning) {
-            // Send a GET request to the DoA URL
-            // SET ALL OUTPUTS AT DESIRED TIME INERVAL FROM ADMIN PANEL
-            krakenSdrOutputSettings.setData();      //settings.json data
-            krakenSdrOutputDoA.setData();           //DoA data
-            try {
-                // Sleep per the sample rate provided by admin panel
-                Thread.sleep(TimeUnit.SECONDS.toMillis(config.sampleRate));
+    private void scheduleReconnect() {
+        if(!keepRunning) return;
+        Thread t = new Thread(() -> {
+           try {
+               Thread.sleep(5_000);
+           } catch (InterruptedException e) {
+               Thread.currentThread().interrupt();
+               return;
+           }
+           connectWebSocket();
+        }, "KrakenSDR-Reconnect");
+        t.setDaemon(true);
+        t.start();
+    }
 
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt(); // Restore interrupt flag
-                getLogger().debug("KrakenSDR worker thread interrupted, shutting down", e);
-                break;
+    private void handleWsMessage (String raw) {
+        try {
+            JsonObject msg = JsonParser.parseString(raw).getAsJsonObject();
+            String type = msg.has("type") ? msg.get("type").getAsString() : "";
+            switch (type) {
+                case "doa":
+                    krakenSdrOutputDoA.setData(msg);
+                    break;;
+                case "settings":
+                    krakenSdrOutputSettings.setData(msg);
+                    break;;
+                case "spectrum":
+                    // Spectrum Output Needed
+                    break;
+                default:
+                    getLogger().debug("Unknown KrakenSdr WS message type: '{}'", type);
             }
+        } catch (Exception e) {
+            getLogger().error("Error processing KrakenSdr WebSocket Message", e);
+        }
+    }
+
+    // Inner Class WebSocket Listener to keep reference clean
+    private class KrakenWsListener implements WebSocket.Listener {
+
+        @Override
+        public void onOpen(WebSocket ws) {
+            getLogger().debug("KrakenSDR WS onOpen");
+            ws.request(1);
         }
 
+        @Override
+        public CompletionStage<?> onText(WebSocket ws, CharSequence data, boolean last) {
+            wsFrameBuffer.append(data);
+            if (last) {
+                String complete = wsFrameBuffer.toString();
+                wsFrameBuffer.setLength(0);
+                handleWsMessage(complete);
+            }
+            ws.request(1);
+            return null;
+        }
+
+        @Override
+        public CompletionStage<?> onClose(WebSocket ws, int statusCode, String reason) {
+            getLogger().info("KrakenSDR WebSocket closed ({}) {}", statusCode, reason);
+            if (keepRunning) {
+                scheduleReconnect();
+            }
+            return null;
+        }
+
+        @Override
+        public void onError(WebSocket ws, Throwable error) {
+            getLogger().error("KrakenSDR WebSocket error", error);
+            if (keepRunning) {
+                scheduleReconnect();
+            }
+        }
     }
+
 }
