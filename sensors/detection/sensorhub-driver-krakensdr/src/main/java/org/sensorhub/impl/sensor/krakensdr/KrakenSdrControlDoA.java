@@ -32,7 +32,7 @@ public class KrakenSdrControlDoA extends AbstractSensorControl<KrakenSdrSensor> 
         // The Master Control Data Structure is a Choice of individual controls for the KrakenSDR
         commandDataStruct = fac.createRecord()
                 .name("doaControl")
-                .label("DoA Configuration")
+                .label("DoA Configuration Control")
                 .description("Data Record for the DoA Configuration Settings")
                 .definition(SWEHelper.getPropertyUri("DoaControl"))
                 .addField(ANTENNA_ARRANGEMENT, fac.createCategory()

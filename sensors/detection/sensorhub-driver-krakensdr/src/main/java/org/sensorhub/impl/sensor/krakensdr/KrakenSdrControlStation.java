@@ -28,7 +28,7 @@ public class KrakenSdrControlStation extends AbstractSensorControl<KrakenSdrSens
         // The Master Control Data Structure is a Choice of individual controls for the KrakenSDR
         commandDataStruct = fac.createRecord()
                 .name("stationControl")
-                .label("Station Configuration")
+                .label("Station Configuration Control")
                 .description("Data Record for the Station Configuration")
                 .definition(SWEHelper.getPropertyUri("StationControl"))
                 .addField(STATION_ID, fac.createText()
