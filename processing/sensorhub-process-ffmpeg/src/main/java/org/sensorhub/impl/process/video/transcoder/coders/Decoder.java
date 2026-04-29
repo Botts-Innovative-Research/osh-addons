@@ -25,8 +25,9 @@ public class Decoder extends Coder<AVPacket, AVFrame> {
     @Override
     protected void initContext() {
         synchronized (contextLock) {
-            codec = avcodec_find_decoder(inputFormat.codec().ffmpegId);;
+            codec = avcodec_find_decoder(inputFormat.codec().ffmpegId);
             codec_ctx = avcodec_alloc_context3(codec);
+            codec_ctx.codec_id(inputFormat.codec().ffmpegId);
             codec_ctx.pix_fmt(outputFormat.pixelFmt().ffmpegId);
         }
     }
@@ -56,13 +57,23 @@ public class Decoder extends Coder<AVPacket, AVFrame> {
 
     @Override
     protected void processInputPacket(AVPacket inputPacket) {
-        if (inputPacket != null) {
+        if (inputPacket != null && !inputPacket.isNull()) {
+            if (avcodec_send_packet(codec_ctx, inputPacket) < 0) {
+                logger.warn("Error sending packet to decoder");
+                //avcodec_flush_buffers(codec_ctx);
+                return;
+            }
+
             AVFrame outputPacket = av_frame_alloc();
-            avcodec_send_packet(codec_ctx, inputPacket);
 
             while (avcodec_receive_frame(codec_ctx, outputPacket) >= 0) {
-                outQueue.add(av_frame_clone(outputPacket));
+                if (!outputPacket.isNull()) {
+                    outQueue.add(outputPacket);
+                }
+                outputPacket = av_frame_alloc();
             }
+
+            av_frame_free(outputPacket);
         }
     }
 }

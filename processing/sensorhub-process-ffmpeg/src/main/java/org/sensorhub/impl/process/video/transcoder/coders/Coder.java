@@ -6,8 +6,10 @@ import java.util.ArrayDeque;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Queue;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.bytedeco.ffmpeg.global.avcodec.*;
@@ -16,6 +18,7 @@ import org.bytedeco.ffmpeg.avcodec.AVCodec;
 import org.bytedeco.ffmpeg.avcodec.AVCodecContext;
 import org.bytedeco.ffmpeg.avcodec.AVPacket;
 import org.bytedeco.ffmpeg.avutil.AVFrame;
+import org.bytedeco.javacpp.BytePointer;
 import org.bytedeco.javacpp.Pointer;
 import org.bytedeco.javacpp.PointerPointer;
 import org.sensorhub.impl.process.video.transcoder.helpers.CodecInfo;
@@ -35,7 +38,8 @@ public abstract class Coder<I extends Pointer, O extends Pointer> implements Aut
 
     private static int coderCount = 0;
     private final int coderNum = coderCount++;
-    private final ExecutorService submitExecutor = Executors.newSingleThreadExecutor(r -> new Thread(r, "ffmpeg-codec-thread-" + coderNum));
+    private final ExecutorService executor = Executors.newSingleThreadExecutor(
+            r -> new Thread(r, "ffmpeg-codec-thread-" + coderNum));
     private final ExecutorService outputExecutor = Executors.newSingleThreadExecutor(r -> new Thread(r, "ffmpeg-codec-output-thread-" + coderNum));
     private final Map<CoderCallback<O>, ExecutorService> callbackMap = new HashMap<>();
 
@@ -46,7 +50,7 @@ public abstract class Coder<I extends Pointer, O extends Pointer> implements Aut
     protected I inPacket;
     protected O outPacket;
     protected final Queue<O> outQueue = new ArrayDeque<>(10);
-    private final AtomicBoolean isProcessing = new AtomicBoolean(true); // Set false to indicate packets should no longer be accepted
+    private final AtomicBoolean isProcessing = new AtomicBoolean(false); // Set false to indicate packets should no longer be accepted
     final Object contextLock = new Object();
     Class<I> inputClass;
     Class<O> outputClass;
@@ -70,11 +74,39 @@ public abstract class Coder<I extends Pointer, O extends Pointer> implements Aut
         this.outputClass = outputClass;
         this.options = options;
 
-        submitExecutor.submit(() -> {
-            initContext();
-            initOptions();
-            openContext();
-        });
+        // All codec operations must happen in a separate thread
+        try {
+            executor.submit(() -> {
+                initContext();
+                initOptions();
+                openContext();
+                isProcessing.set(true);
+            }).get(); // blocks constructor until init is complete
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException("Interrupted during codec initialization", e);
+        } catch (ExecutionException e) {
+            throw new RuntimeException("Error initializing codec context", e.getCause());
+        }
+    }
+
+    private void submitTask(Runnable task) {
+        if (!executor.isShutdown()) {
+            executor.submit(() -> {
+                try {
+                    task.run();
+                } catch (Throwable t) {
+                    // Prevent silent thread replacement — log and propagate
+                    // only after codec state is consistent
+                    logger.error("Fatal error in codec runner thread", t);
+                    //throw t; // will kill this task but not spawn a new thread silently
+                }
+            });
+        }
+    }
+
+    public boolean isReady() {
+        return isProcessing.get();
     }
 
     public Class getOutputClass() {
@@ -88,14 +120,22 @@ public abstract class Coder<I extends Pointer, O extends Pointer> implements Aut
     protected abstract void initContext();
 
     protected void openContext() {
-        if (avcodec_open2(codec_ctx, codec, (PointerPointer<?>) null) < 0) {
+        int ret;
+        if ((ret = avcodec_open2(codec_ctx, codec, (PointerPointer<?>) null)) < 0) {
+            logFFmpeg(ret);
             throw new IllegalStateException("Error opening codec " + codec.name().getString());
         }
     }
 
+    protected static void logFFmpeg(int retCode) {
+        BytePointer buf = new BytePointer(AV_ERROR_MAX_STRING_SIZE);
+        av_strerror(retCode, buf, buf.capacity());
+        logger.warn("FFmpeg returned error code {}: {}", retCode, buf.getString());
+    }
+
     /**
      * Set certain options in the codec context.
-     * @param codec_ctx Codec context. Context must be allocated first.
+     * Context must be allocated first using {@link #initContext()}.
      */
     protected void initOptions() {
 
@@ -110,22 +150,23 @@ public abstract class Coder<I extends Pointer, O extends Pointer> implements Aut
         codec_ctx.width(options.width());
         codec_ctx.height(options.height());
 
-        /*
-        if (options.containsKey("pix_fmt")) {
-            codec_ctx.pix_fmt(options.get("pix_fmt"));
-        } else {
-            if (inputFormat == AV_CODEC_ID_MJPEG) {
-                codec_ctx.pix_fmt(AV_PIX_FMT_YUVJ420P);
-            } else {
-                codec_ctx.pix_fmt(AV_PIX_FMT_YUV420P);
-            }
+        codec_ctx.framerate(av_make_q(options.fps(), 1));
+
+        if (inputFormat.codec().ffmpegId == AV_CODEC_ID_H264) {
+            // OpenH264 only supports Baseline (66) and Main (77)
+            codec_ctx.profile(AV_PROFILE_H264_MAIN);
+
+            // Enable frame skip so bitrate control works correctly,
+            // or it falls back to quality mode and ignores the bitrate setting
+            av_opt_set(codec_ctx.priv_data(), "skip_frames", "1", 0);
+
+            // OpenH264 uses slice_mode instead of preset
+            av_opt_set(codec_ctx.priv_data(), "slice_mode", "auto", 0);
         }
 
-         */
-
-        av_opt_set(codec_ctx.priv_data(), "preset", options.preset(), 0);
-        av_opt_set(codec_ctx.priv_data(), "tune", options.tune(), 0);
-        codec_ctx.strict_std_compliance(options.compliance()); // Needed so that yuvj420p works (used for mjpeg)
+        //av_opt_set(codec_ctx.priv_data(), "preset", options.preset(), 0);
+        //av_opt_set(codec_ctx.priv_data(), "tune", options.tune(), 0);
+        codec_ctx.strict_std_compliance(options.compliance()); // Needed so that yuvj420p works (used for mjpeg, must be set to unofficial)
     }
 
     protected abstract void deallocateInputPacket(I packet);
@@ -139,7 +180,7 @@ public abstract class Coder<I extends Pointer, O extends Pointer> implements Aut
             if (inputPacket == null || !isProcessing.get()) {
                 return;
             }
-            submitExecutor.submit(() -> {
+            submitTask(() -> {
                 // Process the input
                 processInputPacket(inputPacket);
                 deallocateInputPacket(inputPacket);
@@ -186,21 +227,32 @@ public abstract class Coder<I extends Pointer, O extends Pointer> implements Aut
     public void close() {
         synchronized (contextLock) {
             if (isProcessing.compareAndSet(true, false)) {
-                submitExecutor.shutdownNow();
-                outputExecutor.shutdownNow();
 
-                if (codec_ctx != null) {
-                    avcodec_free_context(codec_ctx);
+                // Submit cleanup *before* shutdown so it is the last task to run
+                executor.submit(this::cleanup);
+                executor.shutdown();
+                try {
+                    executor.awaitTermination(Long.MAX_VALUE, TimeUnit.NANOSECONDS);
+                } catch (InterruptedException ignored) {
+                    logger.warn("Interrupted while waiting for ffmpeg thread to finish");
+                    Thread.currentThread().interrupt();
                 }
-                codec_ctx = null;
-                codec = null;
-
                 unregisterAllCallbacks();
-
-                for (var packet : outQueue) {
-                    deallocateOutputPacket(packet);
-                }
             }
+        }
+    }
+
+    private void cleanup() {
+        if (codec_ctx != null) {
+            avcodec_free_context(codec_ctx);
+        }
+        codec_ctx = null;
+        codec = null;
+
+        unregisterAllCallbacks();
+
+        for (var packet : outQueue) {
+            deallocateOutputPacket(packet);
         }
     }
 }

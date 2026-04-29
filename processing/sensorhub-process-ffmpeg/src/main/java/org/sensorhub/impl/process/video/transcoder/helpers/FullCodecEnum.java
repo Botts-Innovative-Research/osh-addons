@@ -4,12 +4,11 @@ import org.bytedeco.ffmpeg.global.avcodec;
 
 public enum FullCodecEnum {
     H264(avcodec.AV_CODEC_ID_H264),
-    H265(avcodec.AV_CODEC_ID_H265),
     HEVC(avcodec.AV_CODEC_ID_HEVC),
     MJPEG(avcodec.AV_CODEC_ID_MJPEG),
     VP8(avcodec.AV_CODEC_ID_VP8),
     VP9(avcodec.AV_CODEC_ID_VP9),
-    MPEG2(avcodec.AV_CODEC_ID_MPEG2TS),
+    MPEG2(avcodec.AV_CODEC_ID_MPEG2VIDEO),
     MPEG4(avcodec.AV_CODEC_ID_MPEG4),
     AV1(avcodec.AV_CODEC_ID_AV1),
     THEORA(avcodec.AV_CODEC_ID_THEORA),

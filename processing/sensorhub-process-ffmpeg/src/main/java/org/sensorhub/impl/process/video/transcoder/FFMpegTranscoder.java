@@ -59,8 +59,7 @@ public class FFMpegTranscoder extends ExecutableProcessImpl
 
 	public static final OSHProcessInfo INFO = new OSHProcessInfo("video:FFMpegTranscoder", "FFMPEG Video Transcoder", null, FFMpegTranscoder.class);
 
-    AtomicBoolean doRun = new AtomicBoolean(true);
-    AtomicBoolean isRunning = new AtomicBoolean(false);
+    AtomicBoolean isInit = new AtomicBoolean(false);
     Time inputTimeStamp;
     Count inputWidth, inputHeight;
     DataArray imgIn;
@@ -159,11 +158,6 @@ public class FFMpegTranscoder extends ExecutableProcessImpl
      * queue in the order they should process the incoming data. At most, the flow will be Decoder -> SWScale -> Encoder.
      */
     private void initCoders() {
-        try {
-            stopProcessing();
-        } catch (Exception e){
-            logger.error("Transcoder could not stop process threads during re-init.", e);
-        }
         if (videoProcs != null) {
             videoProcs.clear();
         }
@@ -198,32 +192,17 @@ public class FFMpegTranscoder extends ExecutableProcessImpl
     }
 
     /**
-     * Invoked during the first call to {@link FFMpegTranscoder#execute()} (when {@link FFMpegTranscoder#isRunning} is false).
-     * Start all {@link Coder} thread objects stored in {@link FFMpegTranscoder#videoProcs}.
-     */
-    private void startProcessThreads() {
-        doRun.set(true);
-        if (videoProcs == null || videoProcs.isEmpty()) {
-            initCoders();
-        }
-
-        isRunning.set(true);
-    }
-
-    /**
      * Invoked on process stop and init.
      * Stop all {@link Coder} thread objects stored in {@link FFMpegTranscoder#videoProcs}.
      */
     private void stopProcessing() throws InterruptedException {
-        doRun.set(false); //TODO These atomic booleans may be entirely unnecessary, remove
+        isInit.set(false);
         if (videoProcs != null) {
             for (Coder codec : videoProcs) {
                 codec.close();
             }
             videoProcs.clear();
         }
-
-        isRunning.set(false);
     }
 
 
@@ -259,12 +238,10 @@ public class FFMpegTranscoder extends ExecutableProcessImpl
 
     @Override
     public void stop() {
-        if (isRunning.get()) {
-            try {
-                stopProcessing();
-            } catch (InterruptedException e) {
-                logger.warn("Interrupted while stopping process threads");
-            }
+        try {
+            stopProcessing();
+        } catch (InterruptedException e) {
+            logger.warn("Interrupted while stopping process threads");
         }
         super.stop();
     }
@@ -314,8 +291,9 @@ public class FFMpegTranscoder extends ExecutableProcessImpl
     @Override
     public void init() throws ProcessException
     {
-        doRun.set(true);
-        isRunning.set(false);
+        if (!isInit.compareAndSet(false, true)) {
+            return;
+        }
 
         // init decoder according to configured codec
         // TODO: Automatically detect input codec from compression in data struct?
@@ -335,7 +313,7 @@ public class FFMpegTranscoder extends ExecutableProcessImpl
         }
         catch (IllegalArgumentException e)
         {
-            reportError("Unsupported codec" + inCodecParam.getData().getStringValue() + ". Must be one of " + Arrays.toString(CodecEnum.values()));
+            reportError("Unsupported codec " + inCodecParam.getData().getStringValue() + ". Must be one of " + Arrays.toString(CodecEnum.values()));
         }
 
         super.init();
@@ -352,16 +330,33 @@ public class FFMpegTranscoder extends ExecutableProcessImpl
         int fps = safeGetCountVal(inputFps);
         int bitrate = safeGetCountVal(inputBitrate);
         width = safeGetCountVal(inputWidth);
+        if (width <= 0) {
+            try {
+                width = imgIn.getComponent("row").getComponentCount();
+            } catch (Exception e) {
+                width = 1920;
+                logger.warn("Input width not specified, using default: 1920", e);
+            }
+        }
+
         height = safeGetCountVal(inputHeight);
+        if (height <= 0) {
+            try {
+                height = imgIn.getComponentCount();
+            } catch (Exception e) {
+                height = 1080;
+                logger.warn("Input height not specified, using default: 1080", e);
+            }
+        }
 
 
         outHeight = safeGetCountVal(outputHeight);
         if (outHeight <= 0) {
             try {
                 outHeight = imgOut.getComponentCount();
-            } catch (Exception ignored) {
+            } catch (Exception e) {
                 outHeight = height;
-                logger.warn("Output height not specified, using input height");
+                logger.warn("Output height not specified, using input height", e);
             }
         }
 
@@ -369,9 +364,9 @@ public class FFMpegTranscoder extends ExecutableProcessImpl
         if (outWidth <= 0) {
             try {
                 outWidth = imgIn.getComponent("row").getComponentCount();
-            } catch (Exception ignored) {
+            } catch (Exception e) {
                 outWidth = width;
-                logger.warn("Output width not specified, using input width");
+                logger.warn("Output width not specified, using input width", e);
             }
         }
 
@@ -394,9 +389,8 @@ public class FFMpegTranscoder extends ExecutableProcessImpl
      */
     private AVByteFormatter getFormatter(CodecInfo codec, @Nullable Integer width, @Nullable Integer height) throws ProcessException {
         try {
-            int pixFmt;
-            if ((pixFmt = codec.pixelFmt().ffmpegId) != AV_PIX_FMT_NONE)
-                return new FrameFormatter(width, height, pixFmt);
+            if (isUncompressed(codec))
+                return new FrameFormatter(width, height, codec.pixelFmt().ffmpegId);
             else
                 return new PacketFormatter();
             /*
@@ -407,7 +401,7 @@ public class FFMpegTranscoder extends ExecutableProcessImpl
             };
              */
         } catch (NullPointerException e) {
-            reportError("Raw formatter for " + codec + " requires non-null width and height.", e);
+            reportError("Formatter for " + codec + " requires non-null width and height.", e);
         }
         return null;
     }
@@ -478,13 +472,27 @@ public class FFMpegTranscoder extends ExecutableProcessImpl
         }
 
         // Start the threads if not already started
-        if (!isRunning.get()) {
-            startProcessThreads();
+        if (!isInit.get()) {
+            init();
+        }
+
+        if (!isVideoProcChainReady()) {
+            logger.warn("Video processor not ready");
+            return;
         }
 
         videoProcs.get(0).submitInputPacket(
                 inputFormatter.convertInput(((DataBlockCompressed)imgIn.getData()).getUnderlyingObject().clone())
         );
+    }
+
+    private boolean isVideoProcChainReady() {
+        for (Coder proc : videoProcs) {
+            if (!proc.isReady()) {
+                return false;
+            }
+        }
+        return true;
     }
 
     @Override
@@ -499,7 +507,7 @@ public class FFMpegTranscoder extends ExecutableProcessImpl
     {
         super.dispose();
 
-        doRun.set(false);
+        isInit.set(false);
 
         if (videoProcs != null) {
             for (Coder proc : videoProcs) {

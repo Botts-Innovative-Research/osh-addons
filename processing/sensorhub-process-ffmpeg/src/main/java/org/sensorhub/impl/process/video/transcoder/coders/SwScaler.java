@@ -41,6 +41,9 @@ public class SwScaler extends Coder<AVFrame, AVFrame> {
     protected void initOptions() {} // no options for swscaler
 
     @Override
+    protected void openContext() {} // no codec to open
+
+    @Override
     protected void deallocateInputPacket(AVFrame packet) {
         if (packet != null) {
             av_frame_free(packet);

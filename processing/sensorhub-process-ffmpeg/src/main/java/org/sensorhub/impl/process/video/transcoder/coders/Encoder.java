@@ -27,11 +27,29 @@ public class Encoder extends Coder<AVFrame, AVPacket> {
     @Override
     protected void initContext() {
         synchronized (contextLock) {
-            AVCodec codec = avcodec_find_encoder(outputFormat.codec().ffmpegId);;
+            // For H264, prefer x264 over OpenH264 — better option compatibility
+            if (outputFormat.codec() == FullCodecEnum.H264) {
+                codec = avcodec_find_encoder_by_name("libx264");
+            }
+
+            // Fall back to the default encoder for this codec ID
+            if (codec == null || codec.isNull()) {
+                codec = avcodec_find_encoder(outputFormat.codec().ffmpegId);
+            }
+
+            if (codec == null || codec.isNull()) {
+                throw new IllegalStateException("Could not find encoder for: " + outputFormat.codec());
+            }
+
             codec_ctx = avcodec_alloc_context3(codec);
-            //initOptions(codec_ctx);
+
+            if (codec_ctx == null || codec_ctx.isNull()) {
+                throw new IllegalStateException("Could not allocate encoder context for: " + codec.name().getString());
+            }
 
             codec_ctx.pix_fmt(inputFormat.pixelFmt().ffmpegId);
+
+            logger.debug("Using encoder: {}", codec.name().getString());
         }
     }
 
@@ -60,13 +78,36 @@ public class Encoder extends Coder<AVFrame, AVPacket> {
 
     @Override
     protected void processInputPacket(AVFrame inputPacket) {
-        if (inputPacket != null) {
+        if (inputPacket != null && !inputPacket.isNull()) {
+            int ret;
+
+            logger.debug("Sending frame to encoder: format={} width={} height={} pts={}",
+                    inputPacket.format(),
+                    inputPacket.width(),
+                    inputPacket.height(),
+                    inputPacket.pts());
+            logger.debug("Encoder expects: format={} width={} height={}",
+                    codec_ctx.pix_fmt(),
+                    codec_ctx.width(),
+                    codec_ctx.height());
+
+            if ((ret = avcodec_send_frame(codec_ctx, inputPacket)) < 0) {
+                logger.warn("Error sending packet to encoder");
+                logFFmpeg(ret);
+                //avcodec_flush_buffers(codec_ctx);
+                return;
+            }
+
             AVPacket outputPacket = av_packet_alloc();
-            avcodec_send_frame(codec_ctx, inputPacket);
 
             while (avcodec_receive_packet(codec_ctx, outputPacket) >= 0) {
-                outQueue.add(av_packet_clone(outputPacket));
+                if (!outputPacket.isNull()) {
+                    outQueue.add(outputPacket);
+                }
+                outputPacket = av_packet_alloc();
             }
+
+            av_packet_free(outputPacket);
         }
     }
 }
