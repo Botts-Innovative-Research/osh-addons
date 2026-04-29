@@ -38,37 +38,44 @@ public class KrakenSdrControlDoA extends AbstractSensorControl<KrakenSdrSensor> 
                         .label("Antenna Arrangement")
                         .description("The Arrangement must be UCA or ULA")
                         .definition(SWEHelper.getPropertyUri("AntennaArrangement"))
-                        .addAllowedValues("UCA", "ULA"))
+                        .addAllowedValues("UCA", "ULA")
+                        .value("UCA"))
                 .addField(ANTENNA_SPACING_M, fac.createQuantity()
                         .uom("m")
                         .label("Antenna Array Radius")
                         .description("Current spacing of the Antenna Array")
-                        .definition(SWEHelper.getPropertyUri("AntennaSpacingMeters")))
+                        .definition(SWEHelper.getPropertyUri("AntennaSpacingMeters"))
+                        .value(0.125))
                 .addField(DOA_ALGORITHM, fac.createCategory()
                         .label("DoA Algorithm")
                         .description("Algorithm used to obtain the DoA")
                         .definition(SWEHelper.getPropertyUri("DoaAlgorithm"))
-                        .addAllowedValues("Bartlett", "Capon", "MEM", "TNA", "MUSIC", "ROOT-MUSIC"))
+                        .addAllowedValues("Bartlett", "Capon", "MEM", "TNA", "MUSIC", "ROOT-MUSIC")
+                        .value("MUSIC"))
                 .addField(DECORRELATION_MTHD, fac.createCategory()
                         .label("Decorrelation Method")
                         .description("Decorrelation method used to assist in dealing with correlated signals")
                         .definition(SWEHelper.getPropertyUri("DecorrelationMethod"))
-                        .addAllowedValues("Off", "FBA", "TOEP", "FBSS", "FBTOEP"))
+                        .addAllowedValues("Off", "FBA", "TOEP", "FBSS", "FBTOEP")
+                        .value("Off"))
                 .addField(ULA_DIRECTION, fac.createCategory()
                         .label("ULA Direction")
                         .description("Determines how Uniform Linear Array (ULA) antennas are oriented relative to reference heading")
                         .definition(SWEHelper.getPropertyUri("UlaDirection"))
-                        .addAllowedValues("Both", "Forward", "Backward"))
+                        .addAllowedValues("Both", "Forward", "Backward")
+                        .value("Both"))
                 .addField(ARRAY_OFFSET, fac.createQuantity()
                         .uom("deg")
                         .label("Array Offset")
                         .description("Array offset in degrees")
-                        .definition(SWEHelper.getPropertyUri("ArrayOffset")))
+                        .definition(SWEHelper.getPropertyUri("ArrayOffset"))
+                        .value(0.0))
                 .addField(EXPECTED_NUM_SRCS, fac.createCategory()
-                        .label("ULA Direction")
-                        .description("Determines how Uniform Linear Array (ULA) antennas are oriented relative to reference heading")
+                        .label("Expected Number of Sources")
+                        .description("Number of signal sources expected by the DoA algorithm")
                         .definition(SWEHelper.getPropertyUri("ExpectedNumberOfSources"))
-                        .addAllowedValues("1", "2", "3", "4"))
+                        .addAllowedValues("1", "2", "3", "4")
+                        .value("1"))
                 .build();
     }
 
@@ -105,29 +112,26 @@ public class KrakenSdrControlDoA extends AbstractSensorControl<KrakenSdrSensor> 
         // UPDATE DECORRELATION METHOD IF UPDATED IN ADMIN PANEL
         Category oshDecorrelationMethod = (Category) commandData.getField(DECORRELATION_MTHD);
         String oshDecorrelationMethodValue = oshDecorrelationMethod.getValue();
-        if (oshDoaAlgoValue != null) {
+        if (oshDecorrelationMethodValue != null) {
             data.addProperty(KrakenSdrConstants.DOA_DECORRELATION, oshDecorrelationMethodValue);
         }
 
         // UPDATE ULA DIRECTION IF UPDATED IN ADMIN PANEL
         Category oshUlaDir = (Category) commandData.getField(ULA_DIRECTION);
         String oshUlaDirValue = oshUlaDir.getValue();
-        if (oshDoaAlgoValue != null) {
+        if (oshUlaDirValue != null) {
             data.addProperty(KrakenSdrConstants.ULA_DIR, oshUlaDirValue);
         }
 
         // UPDATE ARRAY OFFSET IF UPDATED IN ADMIN PANEL
         Quantity oshArrayOffset = (Quantity) commandData.getField(ARRAY_OFFSET);
-        double oshArrayOffsetValue = oshArrayOffset.getValue();
-        if (oshDoaAlgoValue != null) {
-            data.addProperty(KrakenSdrConstants.ARRAY_OFFSET, oshArrayOffsetValue);
-        }
+        data.addProperty(KrakenSdrConstants.ARRAY_OFFSET, oshArrayOffset.getValue());
 
         // UPDATE EXPECTED NUMBER OF SOURCES IF UPDATED IN ADMIN PANEL
         Category oshExpNumSrcs = (Category) commandData.getField(EXPECTED_NUM_SRCS);
-        int oshExpNumSrcsValue = Integer.parseInt(oshExpNumSrcs.getValue());
-        if (oshDoaAlgoValue != null) {
-            data.addProperty(KrakenSdrConstants.EXPECTED_NUM_SRCS, oshExpNumSrcsValue);
+        String oshExpNumSrcsValue = oshExpNumSrcs.getValue();
+        if (oshExpNumSrcsValue != null) {
+            data.addProperty(KrakenSdrConstants.EXPECTED_NUM_SRCS, Integer.parseInt(oshExpNumSrcsValue));
         }
 
         if (data.isEmpty()) {

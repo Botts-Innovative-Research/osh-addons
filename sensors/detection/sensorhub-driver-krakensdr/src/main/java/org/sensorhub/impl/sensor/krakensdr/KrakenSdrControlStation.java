@@ -42,6 +42,7 @@ public class KrakenSdrControlStation extends AbstractSensorControl<KrakenSdrSens
                         .description("Current Location Source for the Kraken Station")
                         .definition(SWEHelper.getPropertyUri("LocationSource"))
                         .addAllowedValues("GPS", "Static")
+                        .value("Static")
                 )
                 .addField(LAT, fac.createText()
                         .label("Latitude")
@@ -96,7 +97,7 @@ public class KrakenSdrControlStation extends AbstractSensorControl<KrakenSdrSens
             float oshLongitudeValue = Float.parseFloat(oshLongitude.getValue());
             data.addProperty(KrakenSdrConstants.LON, oshLongitudeValue);
 
-            Text oshHeading = (Text) commandData.getField(LON);
+            Text oshHeading = (Text) commandData.getField(HEADING);
             float oshHeadingValue = Float.parseFloat(oshHeading.getValue());
             data.addProperty(KrakenSdrConstants.HEADING, oshHeadingValue);
         }
