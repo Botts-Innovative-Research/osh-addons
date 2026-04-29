@@ -126,6 +126,16 @@ public class KrakenSdrSensor extends AbstractSensorModule<KrakenSdrConfig> {
                 });
     }
 
+    void updateKrakenSettings(JsonObject data) throws CommandException {
+        // Prepare Web socket message
+        JsonObject command = new JsonObject();
+        command.addProperty("type", "command");
+        command.addProperty("action", "update_settings");
+        command.add("data", data);
+
+        this.sendWsMessage(command);
+    }
+
     // WebSocket Connection
     private void connectWebSocket() {
         if (!keepRunning) return;
