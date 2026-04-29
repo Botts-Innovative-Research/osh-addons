@@ -11,7 +11,6 @@ import java.net.HttpURLConnection;
 
 public class KrakenSdrControlStation extends AbstractSensorControl<KrakenSdrSensor> {
     private DataRecord commandDataStruct;
-    KrakenUtility util = parentSensor.util;
     private static final String STATION_ID = "stationId";
     private static final String LOCATION_SRC = "locationSource" ;
     private static final String LAT = "latitude";

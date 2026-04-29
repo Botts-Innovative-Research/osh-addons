@@ -11,7 +11,6 @@ import java.net.HttpURLConnection;
 
 public class KrakenSdrControlDoA extends AbstractSensorControl<KrakenSdrSensor> {
     private DataRecord commandDataStruct;
-    KrakenUtility util = parentSensor.util;
     private static final String ANTENNA_SPACING_M = "antennaSpacingMeters";
     private static final String ANTENNA_ARRANGEMENT = "antennaArrangement";
     private static final String DOA_ALGORITHM = "doaAlgorithm";
