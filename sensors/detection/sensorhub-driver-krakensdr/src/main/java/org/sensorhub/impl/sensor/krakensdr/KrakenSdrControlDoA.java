@@ -76,7 +76,6 @@ public class KrakenSdrControlDoA extends AbstractSensorControl<KrakenSdrSensor> 
     @Override
     protected boolean execCommand(DataBlock cmdData) throws CommandException
     {
-
         // RETRIEVE INPUTS FROM ADMIN PANEL CONTROL
         DataRecord commandData = commandDataStruct.copy();
         commandData.setData(cmdData);
@@ -140,14 +139,8 @@ public class KrakenSdrControlDoA extends AbstractSensorControl<KrakenSdrSensor> 
         return true;
     }
 
-
     @Override
     public DataComponent getCommandDescription() {
         return commandDataStruct;
     }
-
-
-
-
-
 }
