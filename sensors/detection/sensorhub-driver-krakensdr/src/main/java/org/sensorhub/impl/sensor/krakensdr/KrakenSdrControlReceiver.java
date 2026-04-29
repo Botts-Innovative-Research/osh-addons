@@ -68,13 +68,7 @@ public class KrakenSdrControlReceiver extends AbstractSensorControl<KrakenSdrSen
             return true;
         }
 
-        // Prepare Web socket message
-        JsonObject command = new JsonObject();
-        command.addProperty("type", "command");
-        command.addProperty("action", "update_settings");
-        command.add("data", data);
-
-        parentSensor.sendWsMessage(command);
+        parentSensor.updateKrakenSettings(data);
         return true;
     }
 
