@@ -32,7 +32,6 @@ public class KrakenSdrSensor extends AbstractSensorModule<KrakenSdrConfig> {
     static final String UID_PREFIX = "urn:osh:sensor:krakensdr:";
     static final String XML_PREFIX = "krakenSdr";
 
-    KrakenUtility util;
     KrakenSdrOutputSettings krakenSdrOutputSettings;
     KrakenSdrOutputDoA krakenSdrOutputDoA;
     KrakenSdrControlReceiver krakenSdrControlReceiver;
