@@ -11,6 +11,7 @@
  ******************************* END LICENSE BLOCK ***************************/
 package org.sensorhub.impl.sensor.krakensdr;
 
+import org.sensorhub.api.command.CommandException;
 import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.impl.sensor.AbstractSensorModule;
 import com.google.gson.JsonObject;
@@ -112,6 +113,17 @@ public class KrakenSdrSensor extends AbstractSensorModule<KrakenSdrConfig> {
     @Override
     public boolean isConnected() {
         return webSocket != null && !webSocket.isInputClosed();
+    }
+
+    void sendWsMessage(JsonObject message) throws CommandException {
+        if (webSocket == null || webSocket.isOutputClosed()) {
+            throw new CommandException("Cannot send command - KrakenSDR WebSocket is not connected");
+        }
+        webSocket.sendText(message.toString(), true)
+                .exceptionally(err -> {
+                    getLogger().error("Failed to send KrakenSDR WebSocket message", err);
+                    return null;
+                });
     }
 
     // WebSocket Connection

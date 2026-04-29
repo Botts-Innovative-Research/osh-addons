@@ -3,19 +3,14 @@ package org.sensorhub.impl.sensor.krakensdr;
 import com.google.gson.JsonObject;
 import net.opengis.swe.v20.*;
 import org.sensorhub.api.command.CommandException;
-import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.impl.sensor.AbstractSensorControl;
 import org.vast.swe.SWEConstants;
 import org.vast.swe.SWEHelper;
 
-import java.net.HttpURLConnection;
-
 public class KrakenSdrControlReceiver extends AbstractSensorControl<KrakenSdrSensor> {
     private DataRecord commandDataStruct;
-    KrakenUtility util = parentSensor.util;
     private static final String CENTER_FREQ = "centerFreq";
     private static final String GAIN = "uniformGain";
-
 
     // CONSTRUCTOR
     public KrakenSdrControlReceiver(KrakenSdrSensor krakenSDRSensor) {
@@ -28,10 +23,10 @@ public class KrakenSdrControlReceiver extends AbstractSensorControl<KrakenSdrSen
         // The Master Control Data Structure is a Choice of individual controls for the KrakenSDR
         commandDataStruct = fac.createRecord()
                 .updatable(true)
-                .name("receiverControl")
-                .label("RF Receiver Configuration")
+                .name("rfReceiverControl")
+                .label("RF Receiver Configuration Control")
                 .description("Data Record for the RF Receiver Configuration")
-                .definition(SWEHelper.getPropertyUri("ReceiverControl"))
+                .definition(SWEHelper.getPropertyUri("RfReceiverControl"))
                 .addField(CENTER_FREQ, fac.createQuantity()
                         .uomCode("MHz")
                         .label("Center Frequency")
@@ -48,48 +43,38 @@ public class KrakenSdrControlReceiver extends AbstractSensorControl<KrakenSdrSen
     }
 
     @Override
-    protected boolean execCommand(DataBlock cmdData) throws CommandException{
+    protected boolean execCommand(DataBlock cmdData) throws CommandException {
 
         // RETRIEVE INPUTS FROM ADMIN PANEL CONTROL
         DataRecord commandData = commandDataStruct.copy();
         commandData.setData(cmdData);
 
-        // RETRIEVE CURRENT JSON SETTINGS AS A JSON OBJECT
-        JsonObject currentSettings = null;
-        JsonObject oldSettings = null;
-        try {
-            currentSettings = util.getSettings();
-            oldSettings = currentSettings.deepCopy();
-        } catch (SensorHubException e) {
-            throw new CommandException("Failed to retrieve current json settings from kraken: ", e);
-        }
+        JsonObject data = new JsonObject();
 
-        // UPDATE CURRENT JSON SETTINGS WITH UPDATED CONTROL SETTINGS BASED ON WHICH IS SELECTED
-        // UPDATE FREQUENCY IF UPDATED IN ADMIN PANEL
+        // Retrieve values from OSH Controls and add to data object
         Quantity oshFrequency = (Quantity) commandData.getField(CENTER_FREQ);
         double oshFrequencyValue = oshFrequency.getValue();
-        if(oshFrequencyValue != 0.0){
-            currentSettings.addProperty("center_freq", oshFrequencyValue);
+        if (oshFrequencyValue != 0.0) {
+            data.addProperty(KrakenSdrConstants.CENTER_FREQ, oshFrequencyValue);
         }
 
-        // UPDATE GAIN IF UPDATED IN ADMIN PANEL
         Category oshGain = (Category) commandData.getField(GAIN);
         String oshGainValue = oshGain.getValue();
-        if(oshGainValue != null){
-            currentSettings.addProperty("uniform_gain", Double.parseDouble(oshGainValue));
+        if (oshGainValue != null) {
+            data.addProperty(KrakenSdrConstants.GAIN, Double.parseDouble(oshGainValue));
         }
 
-
-
-        // REPLACE SETTINGS ON KRAKENSDR BASED ON CONTROL UPDATED ABOVE
-        if(!currentSettings.equals(oldSettings)){
-            try {
-                util.uploadSettings(currentSettings);
-            }catch (SensorHubException e){
-                throw new CommandException("Kraken settings upload failed", e);
-            }
+        if (data.isEmpty()) {
+            return true;
         }
 
+        // Prepare Web socket message
+        JsonObject command = new JsonObject();
+        command.addProperty("type", "command");
+        command.addProperty("action", "update_settings");
+        command.add("data", data);
+
+        parentSensor.sendWsMessage(command);
         return true;
     }
 
