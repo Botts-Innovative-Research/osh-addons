@@ -14,7 +14,13 @@ public class KrakenSdrControlDoA extends AbstractSensorControl<KrakenSdrSensor> 
     KrakenUtility util = parentSensor.util;
     private static final String ANTENNA_SPACING_M = "antennaSpacingMeters";
     private static final String ANTENNA_ARRANGEMENT = "antennaArrangement";
-    
+    private static final String DOA_ALGORITHM = "doaAlgorithm";
+    private static final String DECORRELATION_MTHD = "decorrelationMethod";
+    private static final String ULA_DIRECTION = "ulaDirection";
+    private static final String ARRAY_OFFSET = "arrayOffset";
+    private static final String EXPECTED_NUM_SRCS = "expectedNumOfSrcs";
+
+
     // CONSTRUCTOR
     public KrakenSdrControlDoA(KrakenSdrSensor krakenSDRSensor) {
         super("doaControl", krakenSDRSensor);
@@ -33,14 +39,38 @@ public class KrakenSdrControlDoA extends AbstractSensorControl<KrakenSdrSensor> 
                         .label("Antenna Arrangement")
                         .description("The Arrangement must be UCA or ULA")
                         .definition(SWEHelper.getPropertyUri("AntennaArrangement"))
-                        .addAllowedValues("UCA", "ULA")
-                )
+                        .addAllowedValues("UCA", "ULA"))
                 .addField(ANTENNA_SPACING_M, fac.createQuantity()
                         .uom("m")
                         .label("Antenna Array Radius")
                         .description("Current spacing of the Antenna Array")
-                        .definition(SWEHelper.getPropertyUri("AntennaSpacingMeters"))
-                ).build();
+                        .definition(SWEHelper.getPropertyUri("AntennaSpacingMeters")))
+                .addField(DOA_ALGORITHM, fac.createCategory()
+                        .label("DoA Algorithm")
+                        .description("Algorithm used to obtain the DoA")
+                        .definition(SWEHelper.getPropertyUri("DoaAlgorithm"))
+                        .addAllowedValues("Bartlett", "Capon", "MEM", "TNA", "MUSIC", "ROOT-MUSIC"))
+                .addField(DECORRELATION_MTHD, fac.createCategory()
+                        .label("Decorrelation Method")
+                        .description("Decorrelation method used to assist in dealing with correlated signals")
+                        .definition(SWEHelper.getPropertyUri("DecorrelationMethod"))
+                        .addAllowedValues("Off", "FBA", "TOEP", "FBSS", "FBTOEP"))
+                .addField(ULA_DIRECTION, fac.createCategory()
+                        .label("ULA Direction")
+                        .description("Determines how Uniform Linear Array (ULA) antennas are oriented relative to reference heading")
+                        .definition(SWEHelper.getPropertyUri("UlaDirection"))
+                        .addAllowedValues("Both", "Forward", "Backward"))
+                .addField(ARRAY_OFFSET, fac.createQuantity()
+                        .uom("deg")
+                        .label("Array Offset")
+                        .description("Array offset in degrees")
+                        .definition(SWEHelper.getPropertyUri("ArrayOffset")))
+                .addField(EXPECTED_NUM_SRCS, fac.createCategory()
+                        .label("ULA Direction")
+                        .description("Determines how Uniform Linear Array (ULA) antennas are oriented relative to reference heading")
+                        .definition(SWEHelper.getPropertyUri("ExpectedNumberOfSources"))
+                        .addAllowedValues("1", "2", "3", "4"))
+                .build();
     }
 
     @Override
@@ -51,43 +81,62 @@ public class KrakenSdrControlDoA extends AbstractSensorControl<KrakenSdrSensor> 
         DataRecord commandData = commandDataStruct.copy();
         commandData.setData(cmdData);
 
+        JsonObject data = new JsonObject();
 
-        // RETRIEVE CURRENT JSON SETTINGS AS A JSON OBJECT
-        JsonObject currentSettings = null;
-        JsonObject oldSettings = null;
-
-        try {
-            currentSettings = util.getSettings();
-            oldSettings = currentSettings.deepCopy();
-        } catch (SensorHubException e) {
-            throw new CommandException("Failed to retrieve current json settings from kraken: ", e);
-        }
-
-        // UPDATE CURRENT JSON SETTINGS WITH UPDATED CONTROL SETTINGS
-        // UPDATE ANTENNA ARRANGEMNENT IF UPDATED IN ADMIN PANEL
+        // UPDATE ANTENNA Arrangement IF UPDATED IN ADMIN PANEL
         Category oshAntArrangement = (Category) commandData.getField(ANTENNA_ARRANGEMENT);
         String oshAntArrangementValue = oshAntArrangement.getValue();
-
-        if(oshAntArrangementValue != null){
-            currentSettings.addProperty("ant_arrangement", oshAntArrangementValue);
+        if (oshAntArrangementValue != null) {
+            data.addProperty(KrakenSdrConstants.ANT_ARRGMNT, oshAntArrangementValue);
         }
 
         // UPDATE ANTENNA SPACING IF UPDATED IN ADMIN PANEL
         Quantity oshAntennaSpacing = (Quantity) commandData.getField(ANTENNA_SPACING_M);
         double oshAntennaSpacingValue = oshAntennaSpacing.getValue();
         if(oshAntennaSpacingValue != 0.0){
-            currentSettings.addProperty("ant_spacing_meters", oshAntennaSpacingValue);
+            data.addProperty(KrakenSdrConstants.ANT_SPACING_MTRS, oshAntennaSpacingValue);
         }
 
-        // REPLACE SETTINGS ON KRAKENSDR BASED ON CONTROL UPDATED ABOVE
-        if(!currentSettings.equals(oldSettings)){
-            try {
-                util.uploadSettings(currentSettings);
-            }catch (SensorHubException e){
-                throw new CommandException("Kraken settings upload failed", e);
-            }
+        // UPDATE DOA ALGORITHM IF UPDATED IN ADMIN PANEL
+        Category oshDoaAlgo = (Category) commandData.getField(DOA_ALGORITHM);
+        String oshDoaAlgoValue = oshDoaAlgo.getValue();
+        if (oshDoaAlgoValue != null) {
+            data.addProperty(KrakenSdrConstants.DOA_ALGORITHM, oshDoaAlgoValue);
         }
 
+        // UPDATE DECORRELATION METHOD IF UPDATED IN ADMIN PANEL
+        Category oshDecorrelationMethod = (Category) commandData.getField(DECORRELATION_MTHD);
+        String oshDecorrelationMethodValue = oshDecorrelationMethod.getValue();
+        if (oshDoaAlgoValue != null) {
+            data.addProperty(KrakenSdrConstants.DOA_DECORRELATION, oshDecorrelationMethodValue);
+        }
+
+        // UPDATE ULA DIRECTION IF UPDATED IN ADMIN PANEL
+        Category oshUlaDir = (Category) commandData.getField(ULA_DIRECTION);
+        String oshUlaDirValue = oshUlaDir.getValue();
+        if (oshDoaAlgoValue != null) {
+            data.addProperty(KrakenSdrConstants.ULA_DIR, oshUlaDirValue);
+        }
+
+        // UPDATE ARRAY OFFSET IF UPDATED IN ADMIN PANEL
+        Quantity oshArrayOffset = (Quantity) commandData.getField(ARRAY_OFFSET);
+        double oshArrayOffsetValue = oshArrayOffset.getValue();
+        if (oshDoaAlgoValue != null) {
+            data.addProperty(KrakenSdrConstants.ARRAY_OFFSET, oshArrayOffsetValue);
+        }
+
+        // UPDATE EXPECTED NUMBER OF SOURCES IF UPDATED IN ADMIN PANEL
+        Category oshExpNumSrcs = (Category) commandData.getField(EXPECTED_NUM_SRCS);
+        int oshExpNumSrcsValue = Integer.parseInt(oshExpNumSrcs.getValue());
+        if (oshDoaAlgoValue != null) {
+            data.addProperty(KrakenSdrConstants.EXPECTED_NUM_SRCS, oshExpNumSrcsValue);
+        }
+
+        if (data.isEmpty()) {
+            return true;
+        }
+
+        parentSensor.updateKrakenSettings(data);
         return true;
     }
 
