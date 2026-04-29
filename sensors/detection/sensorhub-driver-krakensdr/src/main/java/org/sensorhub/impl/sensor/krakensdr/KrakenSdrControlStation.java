@@ -6,6 +6,7 @@ import org.sensorhub.api.command.CommandException;
 import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.impl.sensor.AbstractSensorControl;
 import org.vast.swe.SWEHelper;
+import org.vast.swe.helper.GeoPosHelper;
 
 import java.net.HttpURLConnection;
 
@@ -15,6 +16,7 @@ public class KrakenSdrControlStation extends AbstractSensorControl<KrakenSdrSens
     private static final String LOCATION_SRC = "locationSource" ;
     private static final String LAT = "latitude";
     private static final String LON = "longitude";
+    private static final String HEADING = "heading";
 
     // CONSTRUCTOR
     public KrakenSdrControlStation(KrakenSdrSensor krakenSDRSensor) {
@@ -43,13 +45,18 @@ public class KrakenSdrControlStation extends AbstractSensorControl<KrakenSdrSens
                 )
                 .addField(LAT, fac.createText()
                         .label("Latitude")
-                        .description("Latitude when station is Static")
-                        .definition(SWEHelper.getPropertyUri("Latitude"))
+                        .description("Latitude when station is Static (-90.0 to 90.0)")
+                        .definition(GeoPosHelper.DEF_LATITUDE_GEODETIC)
                 )
                 .addField(LON, fac.createText()
                         .label("Longitude")
-                        .description("Longitude when station is Static")
-                        .definition(SWEHelper.getPropertyUri("Longitude"))
+                        .description("Longitude when station is Static (-180.0 to 180.0)")
+                        .definition(GeoPosHelper.DEF_LONGITUDE)
+                )
+                .addField(HEADING, fac.createText()
+                        .label("Heading")
+                        .description("Heading when station is Static (0.0 to 360.0)")
+                        .definition(GeoPosHelper.DEF_HEADING_TRUE)
                 )
                 .build();
 
@@ -63,52 +70,38 @@ public class KrakenSdrControlStation extends AbstractSensorControl<KrakenSdrSens
         DataRecord commandData = commandDataStruct.copy();
         commandData.setData(cmdData);
 
+        JsonObject data = new JsonObject();
 
-        // RETRIEVE CURRENT JSON SETTINGS AS A JSON OBJECT
-        JsonObject currentSettings = null;
-        JsonObject oldSettings = null;
-        try {
-            currentSettings = util.getSettings();
-            oldSettings = currentSettings.deepCopy();
-        } catch (SensorHubException e) {
-            throw new CommandException("Failed to retrieve current json settings from kraken: ", e);
-        }
-
-        // UPDATE CURRENT JSON SETTINGS WITH UPDATED CONTROL SETTINGS
         // UPDATE Name of KrakenSDR IF UPDATED IN ADMIN PANEL
         Text oshStationId = (Text) commandData.getField(STATION_ID);
         String oshStationIdValue = oshStationId.getValue();
         if(oshStationIdValue != null){
-            currentSettings.addProperty("station_id", oshStationIdValue);
+            data.addProperty(KrakenSdrConstants.STATION_ID, oshStationIdValue);
         }
 
         // UPDATE LOCATION SETTINGS IF GPS MODE OR STATIC MODE IS SELECTED
         Category oshLocationSource = (Category) commandData.getField(LOCATION_SRC);
         String oshLocationSourceValue = oshLocationSource.getValue();
         if(oshLocationSourceValue != null && oshLocationSourceValue.equals("GPS")){
-            currentSettings.addProperty("location_source", "gpsd");
+            data.addProperty(KrakenSdrConstants.LOCATION_SRC, "gpsd");
         } else if (oshLocationSourceValue != null && oshLocationSourceValue.equals("Static")) {
-            // IF STATIC, ALSO ADD LATITUDE AND LONGITUDE
-            currentSettings.addProperty("location_source", "Static");
+            // IF STATIC, ALSO ADD LATITUDE AND LONGITUDE AND HEADING
+            data.addProperty(KrakenSdrConstants.LOCATION_SRC, "Static");
 
             Text oshLatitude = (Text) commandData.getField(LAT);
-            String oshLatitudeValue = oshLatitude.getValue();
-            currentSettings.addProperty(LAT, Double.parseDouble(oshLatitudeValue));
+            float oshLatitudeValue = Float.parseFloat(oshLatitude.getValue());
+            data.addProperty(KrakenSdrConstants.LAT, oshLatitudeValue);
 
             Text oshLongitude = (Text) commandData.getField(LON);
-            String oshLongitudeValue = oshLongitude.getValue();
-            currentSettings.addProperty(LON,Double.parseDouble(oshLongitudeValue));
+            float oshLongitudeValue = Float.parseFloat(oshLongitude.getValue());
+            data.addProperty(KrakenSdrConstants.LON, oshLongitudeValue);
+
+            Text oshHeading = (Text) commandData.getField(LON);
+            float oshHeadingValue = Float.parseFloat(oshHeading.getValue());
+            data.addProperty(KrakenSdrConstants.HEADING, oshHeadingValue);
         }
 
-        // REPLACE SETTINGS ON KRAKENSDR BASED ON CONTROL UPDATED ABOVE
-        if(!currentSettings.equals(oldSettings)){
-            try {
-                util.uploadSettings(currentSettings);
-            }catch (SensorHubException e){
-                throw new CommandException("Kraken settings upload failed", e);
-            }
-        }
-
+        parentSensor.updateKrakenSettings(data);
         return true;
     }
 
