@@ -41,10 +41,6 @@ public class KrakenSdrConfig extends SensorConfig {
     public String krakenIPaddress = "localhost";
 
     @DisplayInfo.Required
-    @DisplayInfo(label="Kraken HTTP Port", desc="ort for the KrakenSDR HTTP file server (settings.json / controls). Usually 8081.")
-    public String krakenPort = "8081";
-
-    @DisplayInfo.Required
     @DisplayInfo(label="Kraken WebSocket Port", desc="Port for the KrakenSDR WebSocket data stream. Usually 8082.")
     public String krakenWsPort = "8082";
 
