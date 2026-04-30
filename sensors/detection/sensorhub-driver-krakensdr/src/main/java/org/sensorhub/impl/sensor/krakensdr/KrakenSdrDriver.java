@@ -19,6 +19,7 @@ import com.google.gson.JsonParser;
 import org.sensorhub.impl.sensor.krakensdr.controls.KrakenSdrControlDoA;
 import org.sensorhub.impl.sensor.krakensdr.controls.KrakenSdrControlReceiver;
 import org.sensorhub.impl.sensor.krakensdr.controls.KrakenSdrControlStation;
+import org.sensorhub.impl.sensor.krakensdr.controls.KrakenSdrControlVfo;
 import org.sensorhub.impl.sensor.krakensdr.outputs.KrakenSdrOutputDoA;
 import org.sensorhub.impl.sensor.krakensdr.outputs.KrakenSdrOutputSettings;
 
@@ -40,7 +41,9 @@ public class KrakenSdrDriver extends AbstractSensorModule<KrakenSdrConfig> {
 
     KrakenSdrOutputSettings krakenSdrOutputSettings;
     KrakenSdrOutputDoA krakenSdrOutputDoA;
+
     KrakenSdrControlReceiver krakenSdrControlReceiver;
+    KrakenSdrControlVfo krakenSdrControlVfo;
     KrakenSdrControlDoA krakenSdrControlDoA;
     KrakenSdrControlStation krakenSdrControlStation;
 
@@ -77,6 +80,10 @@ public class KrakenSdrDriver extends AbstractSensorModule<KrakenSdrConfig> {
         krakenSdrControlDoA = new KrakenSdrControlDoA(this);
         addControlInput(krakenSdrControlDoA);
         krakenSdrControlDoA.doInit();
+
+        krakenSdrControlVfo = new KrakenSdrControlVfo(this);
+        addControlInput(krakenSdrControlVfo);
+        krakenSdrControlVfo.doInit();
 
         krakenSdrControlStation = new KrakenSdrControlStation(this);
         addControlInput(krakenSdrControlStation);
