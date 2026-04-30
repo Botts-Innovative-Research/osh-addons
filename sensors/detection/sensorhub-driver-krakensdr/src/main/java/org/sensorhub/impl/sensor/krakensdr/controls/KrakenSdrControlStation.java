@@ -1,16 +1,15 @@
-package org.sensorhub.impl.sensor.krakensdr;
+package org.sensorhub.impl.sensor.krakensdr.controls;
 
 import com.google.gson.JsonObject;
 import net.opengis.swe.v20.*;
 import org.sensorhub.api.command.CommandException;
-import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.impl.sensor.AbstractSensorControl;
+import org.sensorhub.impl.sensor.krakensdr.KrakenSdrConstants;
+import org.sensorhub.impl.sensor.krakensdr.KrakenSdrDriver;
 import org.vast.swe.SWEHelper;
 import org.vast.swe.helper.GeoPosHelper;
 
-import java.net.HttpURLConnection;
-
-public class KrakenSdrControlStation extends AbstractSensorControl<KrakenSdrSensor> {
+public class KrakenSdrControlStation extends AbstractSensorControl<KrakenSdrDriver> {
     private DataRecord commandDataStruct;
     private static final String STATION_ID = "stationId";
     private static final String LOCATION_SRC = "locationSource" ;
@@ -19,8 +18,8 @@ public class KrakenSdrControlStation extends AbstractSensorControl<KrakenSdrSens
     private static final String HEADING = "heading";
 
     // CONSTRUCTOR
-    public KrakenSdrControlStation(KrakenSdrSensor krakenSDRSensor) {
-        super("stationControl", krakenSDRSensor);
+    public KrakenSdrControlStation(KrakenSdrDriver krakenSdrDriver) {
+        super("stationControl", krakenSdrDriver);
     }
 
     // INITIALIZE CONTROL

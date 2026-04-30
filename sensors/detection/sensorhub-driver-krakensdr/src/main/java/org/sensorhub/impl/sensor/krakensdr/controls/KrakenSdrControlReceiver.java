@@ -1,20 +1,22 @@
-package org.sensorhub.impl.sensor.krakensdr;
+package org.sensorhub.impl.sensor.krakensdr.controls;
 
 import com.google.gson.JsonObject;
 import net.opengis.swe.v20.*;
 import org.sensorhub.api.command.CommandException;
 import org.sensorhub.impl.sensor.AbstractSensorControl;
+import org.sensorhub.impl.sensor.krakensdr.KrakenSdrConstants;
+import org.sensorhub.impl.sensor.krakensdr.KrakenSdrDriver;
 import org.vast.swe.SWEConstants;
 import org.vast.swe.SWEHelper;
 
-public class KrakenSdrControlReceiver extends AbstractSensorControl<KrakenSdrSensor> {
+public class KrakenSdrControlReceiver extends AbstractSensorControl<KrakenSdrDriver> {
     private DataRecord commandDataStruct;
     private static final String CENTER_FREQ = "centerFreq";
     private static final String GAIN = "uniformGain";
 
     // CONSTRUCTOR
-    public KrakenSdrControlReceiver(KrakenSdrSensor krakenSDRSensor) {
-        super("receiverControl", krakenSDRSensor);
+    public KrakenSdrControlReceiver(KrakenSdrDriver krakenSdrDriver) {
+        super("receiverControl", krakenSdrDriver);
     }
 
     // INITIALIZE CONTROL
@@ -38,7 +40,7 @@ public class KrakenSdrControlReceiver extends AbstractSensorControl<KrakenSdrSen
                         .description("Input the Receiver Gain in dB")
                         .definition(SWEHelper.getPropertyUri("UniformGain"))
                         .addAllowedValues("0", "0.9", "1.4", "2.7", "3.7", "7.7", "8.7", "12.5", "14.4", "15.7", "16.6", "19.7", "20.7", "22.9", "25.4", "28.0", "29.7", "32.8", "33.8", "36.4", "37.2", "38.6", "40.2", "42.1", "43.4", "43.9", "44.5", "48.0", "49.6")
-                        .value("20.7")
+                        .value("19.7")
                 )
                 .build();
     }

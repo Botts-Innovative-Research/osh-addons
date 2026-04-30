@@ -27,9 +27,9 @@ import java.time.ZoneOffset;
 
 
 /**
- * Output specification and provider for {@link KrakenSdrSensor}.
+ * Output specification and provider for {@link KrakenSdrDriver}.
  */
-public class KrakenSdrOutputDoA extends AbstractSensorOutput<KrakenSdrSensor> {
+public class KrakenSdrOutputDoA extends AbstractSensorOutput<KrakenSdrDriver> {
     static final String SENSOR_OUTPUT_NAME = "kraken_doa";
     static final String SENSOR_OUTPUT_LABEL = "DoA";
     static final String SENSOR_OUTPUT_DESCRIPTION = "This is the DoA output for the krakenSDR";
@@ -52,7 +52,7 @@ public class KrakenSdrOutputDoA extends AbstractSensorOutput<KrakenSdrSensor> {
      *
      * @param parentSensor Sensor driver providing this output.
      */
-    public KrakenSdrOutputDoA(KrakenSdrSensor parentSensor) {
+    public KrakenSdrOutputDoA(KrakenSdrDriver parentSensor) {
         super(SENSOR_OUTPUT_NAME, parentSensor);
     }
 
@@ -138,7 +138,7 @@ public class KrakenSdrOutputDoA extends AbstractSensorOutput<KrakenSdrSensor> {
         return accumulator / (double) MAX_NUM_TIMING_SAMPLES;
     }
     /**
-     * Called by {@link KrakenSdrSensor} when a WebSocket {@code "doa"} message arrives.
+     * Called by {@link KrakenSdrDriver} when a WebSocket {@code "doa"} message arrives.
      *
      * <p>WS field → SWE output field mapping:
      * <ul>

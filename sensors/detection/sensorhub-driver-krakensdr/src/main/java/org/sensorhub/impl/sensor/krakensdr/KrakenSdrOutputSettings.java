@@ -21,9 +21,9 @@ import org.vast.swe.helper.GeoPosHelper;
 
 
 /**
- * Output specification and provider for {@link KrakenSdrSensor}.
+ * Output specification and provider for {@link KrakenSdrDriver}.
  */
-public class KrakenSdrOutputSettings extends AbstractSensorOutput<KrakenSdrSensor> {
+public class KrakenSdrOutputSettings extends AbstractSensorOutput<KrakenSdrDriver> {
     static final String SENSOR_OUTPUT_NAME = "kraken_settings";
     static final String SENSOR_OUTPUT_LABEL = "Current Applicable Settings";
     static final String SENSOR_OUTPUT_DESCRIPTION = "This is the output for the krakenSDR's current settings";
@@ -43,7 +43,7 @@ public class KrakenSdrOutputSettings extends AbstractSensorOutput<KrakenSdrSenso
      *
      * @param parentSensor Sensor driver providing this output.
      */
-    public KrakenSdrOutputSettings(KrakenSdrSensor parentSensor) {
+    public KrakenSdrOutputSettings(KrakenSdrDriver parentSensor) {
         super(SENSOR_OUTPUT_NAME, parentSensor);
     }
 
@@ -201,7 +201,7 @@ public class KrakenSdrOutputSettings extends AbstractSensorOutput<KrakenSdrSenso
     }
 
     /**
-     * Called by {@link KrakenSdrSensor} when a WebSocket {@code "settings"} message arrives.
+     * Called by {@link KrakenSdrDriver} when a WebSocket {@code "settings"} message arrives.
      *
      * @param settingsMsg the parsed JSON object from the WebSocket frame
      */

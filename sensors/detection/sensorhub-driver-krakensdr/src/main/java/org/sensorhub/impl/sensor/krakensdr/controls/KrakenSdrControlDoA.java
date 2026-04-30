@@ -1,15 +1,14 @@
-package org.sensorhub.impl.sensor.krakensdr;
+package org.sensorhub.impl.sensor.krakensdr.controls;
 
 import com.google.gson.JsonObject;
 import net.opengis.swe.v20.*;
 import org.sensorhub.api.command.CommandException;
-import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.impl.sensor.AbstractSensorControl;
+import org.sensorhub.impl.sensor.krakensdr.KrakenSdrConstants;
+import org.sensorhub.impl.sensor.krakensdr.KrakenSdrDriver;
 import org.vast.swe.SWEHelper;
 
-import java.net.HttpURLConnection;
-
-public class KrakenSdrControlDoA extends AbstractSensorControl<KrakenSdrSensor> {
+public class KrakenSdrControlDoA extends AbstractSensorControl<KrakenSdrDriver> {
     private DataRecord commandDataStruct;
     private static final String ANTENNA_SPACING_M = "antennaSpacingMeters";
     private static final String ANTENNA_ARRANGEMENT = "antennaArrangement";
@@ -21,8 +20,8 @@ public class KrakenSdrControlDoA extends AbstractSensorControl<KrakenSdrSensor> 
 
 
     // CONSTRUCTOR
-    public KrakenSdrControlDoA(KrakenSdrSensor krakenSDRSensor) {
-        super("doaControl", krakenSDRSensor);
+    public KrakenSdrControlDoA(KrakenSdrDriver krakenSdrDriver) {
+        super("doaControl", krakenSdrDriver);
     }
 
     // INITIALIZE CONTROL
@@ -45,13 +44,13 @@ public class KrakenSdrControlDoA extends AbstractSensorControl<KrakenSdrSensor> 
                         .label("Antenna Array Radius")
                         .description("Current spacing of the Antenna Array")
                         .definition(SWEHelper.getPropertyUri("AntennaSpacingMeters"))
-                        .value(0.125))
+                        .value(0.21))
                 .addField(DOA_ALGORITHM, fac.createCategory()
                         .label("DoA Algorithm")
                         .description("Algorithm used to obtain the DoA")
                         .definition(SWEHelper.getPropertyUri("DoaAlgorithm"))
                         .addAllowedValues("Bartlett", "Capon", "MEM", "TNA", "MUSIC", "ROOT-MUSIC")
-                        .value("MUSIC"))
+                        .value("Bartlett"))
                 .addField(DECORRELATION_MTHD, fac.createCategory()
                         .label("Decorrelation Method")
                         .description("Decorrelation method used to assist in dealing with correlated signals")
