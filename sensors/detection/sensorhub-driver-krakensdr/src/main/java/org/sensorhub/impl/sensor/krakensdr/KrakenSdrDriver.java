@@ -19,6 +19,8 @@ import com.google.gson.JsonParser;
 import org.sensorhub.impl.sensor.krakensdr.controls.KrakenSdrControlDoA;
 import org.sensorhub.impl.sensor.krakensdr.controls.KrakenSdrControlReceiver;
 import org.sensorhub.impl.sensor.krakensdr.controls.KrakenSdrControlStation;
+import org.sensorhub.impl.sensor.krakensdr.outputs.KrakenSdrOutputDoA;
+import org.sensorhub.impl.sensor.krakensdr.outputs.KrakenSdrOutputSettings;
 
 import java.net.URI;
 import java.net.http.HttpClient;
