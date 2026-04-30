@@ -8,6 +8,7 @@ import org.sensorhub.impl.sensor.rtmp.config.HostType;
 import org.sensorhub.impl.sensor.rtmp.config.RtmpConfig;
 import org.sensorhub.mpegts.MpegTsProcessor;
 
+import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -32,12 +33,18 @@ public class RtmpDriver extends AbstractSensorModule<RtmpConfig> {
     protected void doInit() throws SensorHubException {
         super.doInit();
 
+        if (getUniqueIdentifier() == null) {
+            generateUniqueID("urn:osh:sensor:rtmp:", config.serialNumber);
+            generateXmlID("RTMP_", config.serialNumber);
+        }
+
         urlArbiter.removeConnection(connectionUrl);
 
         setConnectionUrl();
 
-        if (!urlArbiter.addConnection(connectionUrl)) {
-            throw new SensorException("RTMP url already in use: " + connectionUrl);
+        String moduleUid;
+        if ((moduleUid = urlArbiter.addConnection(connectionUrl, this.getUniqueIdentifier())) != null) {
+            throw new SensorException("RTMP url already in use by module: " + moduleUid);
         }
 
         createMpegTsProcessor();
