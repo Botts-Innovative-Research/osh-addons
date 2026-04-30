@@ -50,7 +50,7 @@ public class KrakenSdrControlDoA extends AbstractSensorControl<KrakenSdrDriver> 
                         .description("Algorithm used to obtain the DoA")
                         .definition(SWEHelper.getPropertyUri("DoaAlgorithm"))
                         .addAllowedValues("Bartlett", "Capon", "MEM", "TNA", "MUSIC", "ROOT-MUSIC")
-                        .value("Bartlett"))
+                        .value("MUSIC"))
                 .addField(DECORRELATION_MTHD, fac.createCategory()
                         .label("Decorrelation Method")
                         .description("Decorrelation method used to assist in dealing with correlated signals")
