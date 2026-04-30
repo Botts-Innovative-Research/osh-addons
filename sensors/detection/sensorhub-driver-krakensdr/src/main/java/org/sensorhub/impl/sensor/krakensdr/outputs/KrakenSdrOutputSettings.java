@@ -9,21 +9,22 @@
 
  Copyright (C) 2020-2025 Botts Innovative Research, Inc. All Rights Reserved.
  ******************************* END LICENSE BLOCK ***************************/
-package org.sensorhub.impl.sensor.krakensdr;
+package org.sensorhub.impl.sensor.krakensdr.outputs;
 
 import com.google.gson.JsonObject;
 import net.opengis.swe.v20.*;
 import org.sensorhub.api.data.DataEvent;
 import org.sensorhub.impl.sensor.AbstractSensorOutput;
+import org.sensorhub.impl.sensor.krakensdr.KrakenSdrDriver;
 import org.vast.swe.SWEBuilders;
 import org.vast.swe.SWEHelper;
 import org.vast.swe.helper.GeoPosHelper;
 
 
 /**
- * Output specification and provider for {@link KrakenSdrSensor}.
+ * Output specification and provider for {@link KrakenSdrDriver}.
  */
-public class KrakenSdrOutputSettings extends AbstractSensorOutput<KrakenSdrSensor> {
+public class KrakenSdrOutputSettings extends AbstractSensorOutput<KrakenSdrDriver> {
     static final String SENSOR_OUTPUT_NAME = "kraken_settings";
     static final String SENSOR_OUTPUT_LABEL = "Current Applicable Settings";
     static final String SENSOR_OUTPUT_DESCRIPTION = "This is the output for the krakenSDR's current settings";
@@ -43,7 +44,7 @@ public class KrakenSdrOutputSettings extends AbstractSensorOutput<KrakenSdrSenso
      *
      * @param parentSensor Sensor driver providing this output.
      */
-    public KrakenSdrOutputSettings(KrakenSdrSensor parentSensor) {
+    public KrakenSdrOutputSettings(KrakenSdrDriver parentSensor) {
         super(SENSOR_OUTPUT_NAME, parentSensor);
     }
 
@@ -201,7 +202,7 @@ public class KrakenSdrOutputSettings extends AbstractSensorOutput<KrakenSdrSenso
     }
 
     /**
-     * Called by {@link KrakenSdrSensor} when a WebSocket {@code "settings"} message arrives.
+     * Called by {@link KrakenSdrDriver} when a WebSocket {@code "settings"} message arrives.
      *
      * @param settingsMsg the parsed JSON object from the WebSocket frame
      */

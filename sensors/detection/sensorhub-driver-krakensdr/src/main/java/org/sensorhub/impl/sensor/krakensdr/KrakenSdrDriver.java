@@ -16,6 +16,13 @@ import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.impl.sensor.AbstractSensorModule;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import org.sensorhub.impl.sensor.krakensdr.controls.KrakenSdrControlDoA;
+import org.sensorhub.impl.sensor.krakensdr.controls.KrakenSdrControlReceiver;
+import org.sensorhub.impl.sensor.krakensdr.controls.KrakenSdrControlStation;
+import org.sensorhub.impl.sensor.krakensdr.controls.KrakenSdrControlVfo;
+import org.sensorhub.impl.sensor.krakensdr.outputs.KrakenSdrOutputDoA;
+import org.sensorhub.impl.sensor.krakensdr.outputs.KrakenSdrOutputSettings;
+
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.WebSocket;
@@ -28,14 +35,15 @@ import java.util.concurrent.CompletionStage;
  * This class is responsible for providing sensor information, managing output registration,
  * and performing initialization and shutdown for the driver and its outputs.
  */
-public class KrakenSdrSensor extends AbstractSensorModule<KrakenSdrConfig> {
+public class KrakenSdrDriver extends AbstractSensorModule<KrakenSdrConfig> {
     static final String UID_PREFIX = "urn:osh:sensor:krakensdr:";
     static final String XML_PREFIX = "krakenSdr";
 
-    KrakenUtility util;
     KrakenSdrOutputSettings krakenSdrOutputSettings;
     KrakenSdrOutputDoA krakenSdrOutputDoA;
+
     KrakenSdrControlReceiver krakenSdrControlReceiver;
+    KrakenSdrControlVfo krakenSdrControlVfo;
     KrakenSdrControlDoA krakenSdrControlDoA;
     KrakenSdrControlStation krakenSdrControlStation;
 
@@ -72,6 +80,10 @@ public class KrakenSdrSensor extends AbstractSensorModule<KrakenSdrConfig> {
         krakenSdrControlDoA = new KrakenSdrControlDoA(this);
         addControlInput(krakenSdrControlDoA);
         krakenSdrControlDoA.doInit();
+
+        krakenSdrControlVfo = new KrakenSdrControlVfo(this);
+        addControlInput(krakenSdrControlVfo);
+        krakenSdrControlVfo.doInit();
 
         krakenSdrControlStation = new KrakenSdrControlStation(this);
         addControlInput(krakenSdrControlStation);
@@ -124,6 +136,16 @@ public class KrakenSdrSensor extends AbstractSensorModule<KrakenSdrConfig> {
                     getLogger().error("Failed to send KrakenSDR WebSocket message", err);
                     return null;
                 });
+    }
+
+    public void updateKrakenSettings(JsonObject data) throws CommandException {
+        // Prepare Web socket message
+        JsonObject command = new JsonObject();
+        command.addProperty("type", "command");
+        command.addProperty("action", "update_settings");
+        command.add("data", data);
+
+        this.sendWsMessage(command);
     }
 
     // WebSocket Connection
