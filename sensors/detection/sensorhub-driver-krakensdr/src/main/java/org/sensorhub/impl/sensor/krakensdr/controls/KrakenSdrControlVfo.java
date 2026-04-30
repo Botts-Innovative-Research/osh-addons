@@ -15,7 +15,7 @@ public class KrakenSdrControlVfo extends AbstractSensorControl<KrakenSdrDriver> 
     private static final String SPECTRUM_CALC = "spectrumCalculation";
     private static final String VFO_DEFAULT_SQLCH = "vfoDefaultSquelchMode";
     private static final String ACTIVE_VFOS = "activeVfos";
-    private static final String OUTPUT_VF0S = "outputVfos";
+    private static final String OUTPUT_VFOS = "outputVfos";
     private static final String DSP_DECIMATION = "dspDecimation";
     private static final String OPTIMIZE_SHORT_BURSTS = "optimizeShortBursts";
 
@@ -58,22 +58,23 @@ public class KrakenSdrControlVfo extends AbstractSensorControl<KrakenSdrDriver> 
                         .definition(SWEHelper.getPropertyUri("ActiveVfos"))
                         .addAllowedInterval(1,16)
                         .value(1))
-                .addField(OUTPUT_VF0S, fac.createQuantity()
+                .addField(OUTPUT_VFOS, fac.createQuantity()
                         .label("Output VFOs")
                         .description("Output VFOs: -1 (all), 0 – 15, default = 0")
                         .definition(SWEHelper.getPropertyUri("OutputVfos"))
                         .addAllowedInterval(-1.0,15)
                         .value(0))
                 .addField(DSP_DECIMATION, fac.createQuantity()
-                        .label("Decorrelation Method")
+                        .label("DSP Decimation")
                         .description("DSP Decimation: ≥ 1, default = 1")
                         .definition(SWEHelper.getPropertyUri("DspDecimation"))
                         .addAllowedInterval(1.0, Double.POSITIVE_INFINITY)
                         .value(1.0))
                 .addField(OPTIMIZE_SHORT_BURSTS, fac.createBoolean()
-                        .label("Optimize Short Burts")
+                        .label("Optimize Short Bursts")
                         .description("Optimize Short Bursts: default=false")
-                        .definition(SWEHelper.getPropertyUri("OptimizeShortBursts")))
+                        .definition(SWEHelper.getPropertyUri("OptimizeShortBursts"))
+                        .value(false))
                 .build();
     }
 
@@ -100,7 +101,7 @@ public class KrakenSdrControlVfo extends AbstractSensorControl<KrakenSdrDriver> 
             data.addProperty(KrakenSdrConstants.VFO_MODE, oshVfoModeValue);
         }
 
-        // UPDATE VFO MODE IF UPDATED IN ADMIN PANEL
+        // UPDATE VFO DEFAULT SQUELCH MODE IF UPDATED IN ADMIN PANEL
         Category oshVfoSqlch = (Category) commandData.getField(VFO_DEFAULT_SQLCH);
         String oshVfoSqlchValue = oshVfoSqlch.getValue();
         if (oshVfoSqlchValue != null) {
@@ -113,7 +114,7 @@ public class KrakenSdrControlVfo extends AbstractSensorControl<KrakenSdrDriver> 
         data.addProperty(KrakenSdrConstants.VFOS_ACTIVE, oshActiveVfosValue);
 
         // UPDATE OUTPUT VFOS IF UPDATED IN ADMIN PANEL
-        Quantity oshOutputVfos = (Quantity) commandData.getField(OUTPUT_VF0S);
+        Quantity oshOutputVfos = (Quantity) commandData.getField(OUTPUT_VFOS);
         double oshOutputVfosValue = oshOutputVfos.getValue();
         data.addProperty(KrakenSdrConstants.VFOS_OUTPUT, oshOutputVfosValue);
 
@@ -126,10 +127,6 @@ public class KrakenSdrControlVfo extends AbstractSensorControl<KrakenSdrDriver> 
         Boolean oshOSB = (Boolean) commandData.getField(OPTIMIZE_SHORT_BURSTS);
         boolean oshOSBValue = oshOSB.getValue();
         data.addProperty(KrakenSdrConstants.ENBL_OPT_SHORT_BURST, oshOSBValue);
-
-        if (data.isEmpty()) {
-            return true;
-        }
 
         parentSensor.updateKrakenSettings(data);
         return true;
