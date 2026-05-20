@@ -55,14 +55,11 @@ public class AxisCameraDriver extends AbstractSensorModule < AxisCameraConfig > 
     public final String VAPIX_QUERY_IMAGE_SIZE = "/view/imagesize.cgi?camera=" + CAMERA_ID;
     public final String VAPIX_API_BASE_URL = "/axis-cgi";
 
-    // PTZ output polls once per second; reflect that as the orientation update period
-    // so downstream consumers know it's a live feed rather than a static value.
-    private static final double ORIENTATION_UPDATE_PERIOD_SEC = 1.0;
-
     RobustConnection connection;
     AxisVideoOutput mjpegVideoOutput;
     RTPVideoOutput < AxisCameraDriver > h264VideoOutput;
     AxisPtzOutput ptzPosOutput;
+    AxisSensorOrientationOutput sensorOrientationOutput;
     AxisVideoControl videoControlInterface;
     AxisPtzControl ptzControlInterface;
 
@@ -118,6 +115,7 @@ public class AxisCameraDriver extends AbstractSensorModule < AxisCameraConfig > 
         mjpegVideoOutput = null;
         h264VideoOutput = null;
         ptzPosOutput = null;
+        sensorOrientationOutput = null;
         ptzControlInterface = null;
         ptzSupported = false;
         initialOrientationCaptured = false;
@@ -225,12 +223,25 @@ public class AxisCameraDriver extends AbstractSensorModule < AxisCameraConfig > 
         initialRoll = config.position.orientation.roll;
         initialOrientationCaptured = true;
 
-        // The orientation isn't static for a PTZ camera; explicitly register the
-        // orientation output with a live update period so downstream consumers
-        // know it's a streaming feed. addOrientationOutput() is a no-op if an
-        // orientation output has already been added.
-        if (ptzSupported)
-            addOrientationOutput(ORIENTATION_UPDATE_PERIOD_SEC);
+        // For a PTZ camera we register two orientation outputs:
+        //
+        // 1. orientationOutput (built-in) — the camera's static mount orientation from config
+        //    (heading/pitch/roll at PTZ = (0,0,0)); published once on start.
+        //
+        // 2. sensorOrientationOutput — the real-time orientation of the camera sensor,
+        //    computed by applying PTZ offsets to the platform orientation; updated
+        //    each time AxisPtzOutput polls the camera via updateOrientationFromPtz().
+        if (ptzSupported) {
+            addOrientationOutput(Double.NaN);
+            orientationOutput.getRecordDescription().setLabel("Platform Orientation");
+            orientationOutput.getRecordDescription().setDescription(
+                    "Static mount orientation of the camera platform at its installed position. " +
+                    "Represents heading, pitch, and roll in the NED frame when the camera PTZ is at (0, 0, 0). " +
+                    "Set via configuration and published once on start.");
+
+            sensorOrientationOutput = new AxisSensorOrientationOutput(this, getLocalFrameID());
+            addOutput(sensorOrientationOutput, false);
+        }
 
         // create I/O objects
         String videoOutName = "video";
@@ -286,47 +297,40 @@ public class AxisCameraDriver extends AbstractSensorModule < AxisCameraConfig > 
         if (ptzSupported) {
             ptzPosOutput.start();
             ptzControlInterface.start();
+            orientationOutput.updateOrientation(
+                System.currentTimeMillis() / 1000.0,
+                initialHeading, initialPitch, initialRoll,
+                true);
         }
     }
 
 
     /**
-     * Update the camera's reported orientation based on the current PTZ readings.
-     * The orientation values configured under "Position" are treated as the camera's
-     * mount orientation at PTZ = (0, 0, 0). Live pan/tilt values from the camera are
-     * applied as offsets:
+     * Update the sensor orientation output based on the current PTZ readings.
+     * The orientation values configured under "Position" are the platform mount
+     * orientation at PTZ = (0, 0, 0). Live pan/tilt values are applied as offsets:
      *   heading = initialHeading + pan   (normalized to (-180, 180])
      *   pitch   = initialPitch   + tilt
      *   roll    = initialRoll            (unchanged; PTZ has no roll axis)
      *
-     * The updated orientation is pushed through the built-in {@code sensorOrientation}
-     * status output (provided by {@link AbstractSensorModule#orientationOutput}), so any
-     * subscriber to the orientation stream receives a fresh event each time the camera
-     * moves.
+     * The updated orientation is pushed through {@link AxisSensorOrientationOutput},
+     * so subscribers receive a fresh event each time the camera moves.
      *
-     * Note: This additive model assumes the camera is mounted with zero mount-roll
-     * (the typical case for ceiling/wall PTZ installs). For arbitrarily-rotated mounts,
-     * proper quaternion composition would be needed instead.
+     * Note: This additive model assumes zero mount-roll (typical for ceiling/wall PTZ
+     * installs). Arbitrarily-rotated mounts would require quaternion composition.
      *
      * @param pan  current pan angle reported by the camera, in degrees
      * @param tilt current tilt angle reported by the camera, in degrees
      */
     public void updateOrientationFromPtz(double pan, double tilt) {
-        if (!initialOrientationCaptured || orientationOutput == null)
+        if (!initialOrientationCaptured || sensorOrientationOutput == null)
             return;
 
         double newHeading = normalizeHeadingDeg(initialHeading + pan);
         double newPitch = initialPitch + tilt;
         double newRoll = initialRoll;
 
-        // updateOrientation signature: (timeSeconds, heading, pitch, roll, isStatus)
-        // The last flag is "false" so this is published as a regular streaming update.
-        orientationOutput.updateOrientation(
-            System.currentTimeMillis() / 1000.0,
-            newHeading,
-            newPitch,
-            newRoll,
-            false);
+        sensorOrientationOutput.updateOrientation(newHeading, newPitch, newRoll);
     }
 
 
