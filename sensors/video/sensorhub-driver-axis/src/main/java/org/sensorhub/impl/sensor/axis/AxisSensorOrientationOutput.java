@@ -32,7 +32,7 @@ import org.vast.swe.helper.GeoPosHelper;
  */
 public class AxisSensorOrientationOutput extends AbstractSensorOutput<AxisCameraDriver> {
 
-    private static final String OUTPUT_NAME = "sensorOrientation";
+    private static final String OUTPUT_NAME = "sensorOrientationPtz";
 
     DataRecord outputStruct;
     DataEncoding outputEncoding;
