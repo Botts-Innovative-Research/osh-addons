@@ -68,7 +68,7 @@ public class KrakenSdrDriver extends AbstractSensorModule<KrakenSdrConfig> {
         generateXmlID(XML_PREFIX, config.serialNumber);
 
         // THE KRAKEN GUI APPLICATION SERVES IT'S _SHARE DIRECTORY TO A SPECIFIC PORT. DEFINE STRUCTURE IN CONFIG TO USE IN APP
-        OUTPUT_URL  = "http://" + config.krakenIPaddress + ":" + config.krakenPort;
+        OUTPUT_URL  = "http://" + config.krakenIPaddress + ":" + config.krakenWsPort;
         SETTINGS_URL = OUTPUT_URL + "/settings.json";
         WS_URL = "ws://" + config.krakenIPaddress + ":" + config.krakenWsPort + "/ws/kraken";
 
