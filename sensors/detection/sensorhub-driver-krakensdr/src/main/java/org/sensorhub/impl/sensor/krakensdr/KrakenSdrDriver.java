@@ -22,6 +22,7 @@ import org.sensorhub.impl.sensor.krakensdr.controls.KrakenSdrControlStation;
 import org.sensorhub.impl.sensor.krakensdr.controls.KrakenSdrControlVfo;
 import org.sensorhub.impl.sensor.krakensdr.outputs.KrakenSdrOutputDoA;
 import org.sensorhub.impl.sensor.krakensdr.outputs.KrakenSdrOutputSettings;
+import org.sensorhub.impl.sensor.krakensdr.outputs.KrakenSdrOutputSpectrum;
 
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -41,6 +42,7 @@ public class KrakenSdrDriver extends AbstractSensorModule<KrakenSdrConfig> {
 
     KrakenSdrOutputSettings krakenSdrOutputSettings;
     KrakenSdrOutputDoA krakenSdrOutputDoA;
+    KrakenSdrOutputSpectrum krakenSdrOutputSpectrum;
 
     KrakenSdrControlReceiver krakenSdrControlReceiver;
     KrakenSdrControlVfo krakenSdrControlVfo;
@@ -100,6 +102,11 @@ public class KrakenSdrDriver extends AbstractSensorModule<KrakenSdrConfig> {
         krakenSdrOutputDoA = new KrakenSdrOutputDoA(this);
         addOutput(krakenSdrOutputDoA, false);
         krakenSdrOutputDoA.doInit();
+
+        // SPECTRUM OUTPUT
+        krakenSdrOutputSpectrum = new KrakenSdrOutputSpectrum(this);
+        addOutput(krakenSdrOutputSpectrum, false);
+        krakenSdrOutputSpectrum.doInit();
     }
 
     @Override
@@ -200,7 +207,7 @@ public class KrakenSdrDriver extends AbstractSensorModule<KrakenSdrConfig> {
                         krakenSdrOutputSettings.setData(msg);
                         break;
                     case "spectrum":
-                        // Spectrum Output Needed
+                        krakenSdrOutputSpectrum.setData(msg);
                         break;
                     default:
                         getLogger().debug("Unknown KrakenSdr WS message type: '{}'", type);
