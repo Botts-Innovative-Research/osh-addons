@@ -32,10 +32,9 @@ import java.time.ZoneOffset;
  * Output specification and provider for KrakenSDR spectrum data.
  *
  * <p>Each published record contains the timestamp, the active antenna channel,
- * and N (frequency, amplitude) pairs that make up the spectrum frame.  Channels
- * where every amplitude value equals -200 dBFS are treated as inactive and are
- * silently skipped; the output is only published when at least one channel
- * carries real data.
+ * and parallel frequency/amplitude arrays.  Channels where every amplitude
+ * value equals -200 dBFS are treated as inactive and are silently skipped;
+ * the output is only published when at least one channel carries real data.
  */
 public class KrakenSdrOutputSpectrum extends AbstractSensorOutput<KrakenSdrDriver> {
 
@@ -57,8 +56,9 @@ public class KrakenSdrOutputSpectrum extends AbstractSensorOutput<KrakenSdrDrive
     private DataRecord dataStruct;
     private DataEncoding dataEncoding;
 
-    /** Kept for resizing before each {@link #setData} call. */
-    private DataArray spectrumArray;
+    /** Kept so both arrays can be resized together before each {@link #setData} call. */
+    private DataArray freqAxisArray;
+    private DataArray amplitudeArray;
 
     /**
      * Creates a new spectrum output for the sensor driver.
@@ -74,11 +74,12 @@ public class KrakenSdrOutputSpectrum extends AbstractSensorOutput<KrakenSdrDrive
      *
      * <p>Schema layout (flat DataBlock indices):
      * <pre>
-     *   [0]           time        – sampling timestamp (ISO UTC)
-     *   [1]           channel     – active channel label, e.g. "ch0"
-     *   [2]           bin_count   – N, number of frequency bins
-     *   [3 + 2*i]     frequency   – center frequency of bin i (Hz, float)
-     *   [3 + 2*i + 1] amplitude   – signal amplitude at bin i (dBFS, float)
+     *   [0]         time           – sampling timestamp (ISO UTC)
+     *   [1]         channel        – active channel label, e.g. "ch0"
+     *   [2]         freq_count     – N, number of points in frequency_axis
+     *   [3..3+N-1]  frequency_axis – center frequency of each point in Hz
+     *   [3+N]       amp_count      – N (always equals freq_count)
+     *   [3+N+1..]   amplitude      – signal amplitude at each frequency in dBFS
      * </pre>
      */
     public void doInit() {
@@ -86,8 +87,11 @@ public class KrakenSdrOutputSpectrum extends AbstractSensorOutput<KrakenSdrDrive
 
         SWEHelper sweFactory = new SWEHelper();
 
-        // Unique ID used to link the variable-size count to the array.
-        String binCountId = "KRAKEN_SPECTRUM_BIN_COUNT";
+        // Each variable-size DataArray requires a sibling Count field whose ID
+        // it references.  freq_count and amp_count will always be equal in
+        // practice, but OSH requires one Count per array.
+        String freqCountId = "KRAKEN_FREQ_COUNT";
+        String ampCountId  = "KRAKEN_AMP_COUNT";
 
         dataStruct = sweFactory.createRecord()
                 .name(SENSOR_OUTPUT_NAME)
@@ -103,35 +107,42 @@ public class KrakenSdrOutputSpectrum extends AbstractSensorOutput<KrakenSdrDrive
                         .label("Active Channel")
                         .description("Antenna channel carrying valid spectrum data (e.g. ch0)")
                         .definition(SWEHelper.getPropertyUri("ChannelIdentifier")))
-                .addField("bin_count", sweFactory.createCount()
-                        .id(binCountId)
-                        .label("Frequency Bin Count")
-                        .description("Number of frequency/amplitude bins in this spectrum frame")
-                        .definition(SWEHelper.getPropertyUri("NumberOfBins")))
-                .addField("spectrum", sweFactory.createArray()
-                        .withVariableSize(binCountId)
-                        .label("Spectrum Data")
-                        .description("Spectrum as (frequency Hz, amplitude dBFS) pairs")
-                        .definition(SWEHelper.getPropertyUri("SpectrumData"))
-                        .withElement("bin", sweFactory.createRecord()
-                                .label("Spectrum Bin")
-                                .addField("frequency", sweFactory.createQuantity()
-                                        .uomCode("Hz")
-                                        .label("Frequency")
-                                        .description("Center frequency of this bin in Hz")
-                                        .dataType(DataType.FLOAT)
-                                        .definition(SWEConstants.QUDT_URI_PREFIX + "Frequency"))
-                                .addField("amplitude", sweFactory.createQuantity()
-                                        .uomCode("dB")
-                                        .label("Amplitude")
-                                        .description("Signal amplitude at this frequency in dBFS")
-                                        .dataType(DataType.FLOAT)
-                                        .definition(SWEHelper.getPropertyUri("SignalAmplitude")))
+                .addField("freq_count", sweFactory.createCount()
+                        .id(freqCountId)
+                        .label("Frequency Axis Size")
+                        .description("Number of points in the frequency_axis array")
+                        .definition(SWEHelper.getPropertyUri("NumberOfFrequencyPoints")))
+                .addField("frequency_axis", sweFactory.createArray()
+                        .withVariableSize(freqCountId)
+                        .label("Frequency Axis")
+                        .description("Center frequency of each sample point in Hz")
+                        .definition(SWEConstants.QUDT_URI_PREFIX + "Frequency")
+                        .withElement("frequency", sweFactory.createQuantity()
+                                .uomCode("Hz")
+                                .label("Frequency")
+                                .dataType(DataType.FLOAT)
+                                .definition(SWEConstants.QUDT_URI_PREFIX + "Frequency")
+                                .build()))
+                .addField("amp_count", sweFactory.createCount()
+                        .id(ampCountId)
+                        .label("Amplitude Array Size")
+                        .description("Number of points in the amplitude array (equals freq_count)")
+                        .definition(SWEHelper.getPropertyUri("NumberOfAmplitudePoints")))
+                .addField("amplitude", sweFactory.createArray()
+                        .withVariableSize(ampCountId)
+                        .label("Amplitude")
+                        .description("Signal amplitude at each frequency point in dBFS")
+                        .definition(SWEHelper.getPropertyUri("SignalAmplitude"))
+                        .withElement("amplitude", sweFactory.createQuantity()
+                                .uomCode("dB")
+                                .label("Amplitude")
+                                .dataType(DataType.FLOAT)
+                                .definition(SWEHelper.getPropertyUri("SignalAmplitude"))
                                 .build()))
                 .build();
 
-        // Keep a typed reference to the array so we can resize it per frame.
-        spectrumArray = (DataArray) dataStruct.getComponent("spectrum");
+        freqAxisArray  = (DataArray) dataStruct.getComponent("frequency_axis");
+        amplitudeArray = (DataArray) dataStruct.getComponent("amplitude");
 
         dataEncoding = sweFactory.newTextEncoding(",", "\n");
     }
@@ -162,11 +173,10 @@ public class KrakenSdrOutputSpectrum extends AbstractSensorOutput<KrakenSdrDrive
      *
      * <p>WS field → SWE output field mapping:
      * <ul>
-     *   <li>{@code timestamp}                       → time</li>
-     *   <li>first channel with values > -200 dBFS   → channel</li>
-     *   <li>{@code freq_axis} length                → bin_count</li>
-     *   <li>{@code freq_axis[i]}                    → spectrum[i].frequency (Hz)</li>
-     *   <li>{@code channels.<ch>[i]}                → spectrum[i].amplitude (dBFS)</li>
+     *   <li>{@code timestamp}                      → time</li>
+     *   <li>first channel with any value > -200    → channel</li>
+     *   <li>{@code freq_axis[i]}                   → frequency_axis[i] (Hz)</li>
+     *   <li>{@code channels.<ch>[i]}               → amplitude[i] (dBFS)</li>
      * </ul>
      *
      * <p>If all channels are inactive (every sample == -200 dBFS) the method
@@ -199,8 +209,9 @@ public class KrakenSdrOutputSpectrum extends AbstractSensorOutput<KrakenSdrDrive
             // Skip frames with no active channel.
             if (activeChannel == null) return;
 
-            // Resize the variable-size array to match this frame's bin count.
-            ((DataArrayImpl) spectrumArray).updateSize(N);
+            // Resize both variable-size arrays to match this frame's point count.
+            ((DataArrayImpl) freqAxisArray).updateSize(N);
+            ((DataArrayImpl) amplitudeArray).updateSize(N);
 
             DataBlock dataBlock = dataStruct.createDataBlock();
 
@@ -217,15 +228,19 @@ public class KrakenSdrOutputSpectrum extends AbstractSensorOutput<KrakenSdrDrive
             // Flat DataBlock layout:
             //   [0]           time
             //   [1]           channel
-            //   [2]           bin_count N
-            //   [3 + 2*i]     frequency[i]
-            //   [3 + 2*i + 1] amplitude[i]
+            //   [2]           freq_count  N
+            //   [3..3+N-1]    frequency_axis[0..N-1]
+            //   [3+N]         amp_count   N
+            //   [3+N+1..3+2N] amplitude[0..N-1]
             dataBlock.setDateTime(0, odt);
             dataBlock.setStringValue(1, activeChannel);
             dataBlock.setIntValue(2, N);
             for (int i = 0; i < N; i++) {
-                dataBlock.setFloatValue(3 + 2 * i,     freqAxis.get(i).getAsFloat());
-                dataBlock.setFloatValue(3 + 2 * i + 1, activeAmplitudes.get(i).getAsFloat());
+                dataBlock.setFloatValue(3 + i, freqAxis.get(i).getAsFloat());
+            }
+            dataBlock.setIntValue(3 + N, N);
+            for (int i = 0; i < N; i++) {
+                dataBlock.setFloatValue(3 + N + 1 + i, activeAmplitudes.get(i).getAsFloat());
             }
 
             latestRecord = dataBlock;
