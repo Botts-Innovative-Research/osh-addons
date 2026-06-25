@@ -2,59 +2,64 @@ package org.sensorhub.impl.service.federation.events;
 
 import java.time.Instant;
 
-public class EventBuilder {
-
+/**
+ * Port of events.EventBuilder.
+ */
+public class EventBuilder
+{
     private Event event;
 
-    public EventBuilder() {
+    public EventBuilder()
+    {
         this.event = Event.blankEvent();
     }
 
-    public EventBuilder withType(DefaultEventTypes eventType) {
-        event.setType(eventType);
+    public EventBuilder withType(DefaultEventTypes eventType)
+    {
+        this.event.type = eventType;
         return this;
     }
 
-    public EventBuilder withTopic(String topic) {
-        event.setTopic(topic);
+    public EventBuilder withTopic(String topic)
+    {
+        this.event.topic = topic;
         return this;
     }
 
-    public EventBuilder withData(Object data) {
-        event.setData(data);
+    public EventBuilder withData(Object data)
+    {
+        this.event.data = data;
         return this;
     }
 
-    public EventBuilder withProducer(Object producer) {
-        event.setProducer(producer);
+    public EventBuilder withProducer(Object producer)
+    {
+        this.event.producer = producer;
         return this;
     }
 
-    public EventBuilder withTimestamp(Instant timestamp) {
-        event.setTimestamp(timestamp);
+    public EventBuilder withTimestamp(Instant timestamp)
+    {
+        this.event.timestamp = timestamp;
         return this;
     }
 
-    public Event build() {
-        Event built = new Event(
-                event.getTimestamp(),
-                event.getType(),
-                event.getTopic(),
-                event.getData(),
-                event.getProducer()
-        );
+    public Event build()
+    {
+        Event built = new Event(event.timestamp, event.type, event.topic, event.data, event.producer);
         reset();
         return built;
     }
 
-    public void reset() {
+    public void reset()
+    {
         this.event = Event.blankEvent();
     }
 
-    public static String createTopic(DefaultEventTypes baseType, String resourceId) {
-        if (resourceId != null && !resourceId.isEmpty()) {
-            return baseType.getValue() + "/" + resourceId;
-        }
-        return baseType.getValue();
+    public static String createTopic(DefaultEventTypes baseTopic, String resourceId)
+    {
+        if (resourceId != null)
+            return baseTopic.value() + "/" + resourceId;
+        return baseTopic.value();
     }
 }

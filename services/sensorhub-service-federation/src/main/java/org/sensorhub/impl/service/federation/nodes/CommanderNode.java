@@ -1,149 +1,105 @@
 package org.sensorhub.impl.service.federation.nodes;
 
-import java.io.IOException;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.util.Base64;
-import java.util.function.Consumer;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
-import org.sensorhub.impl.service.federation.ControlstreamInfo;
-import org.sensorhub.impl.service.federation.DatastreamInfo;
-import org.sensorhub.impl.service.federation.SystemInfo;
-import org.sensorhub.impl.service.federation.environment.NodeEnvData;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import org.sensorhub.impl.service.federation.events.Event;
+import org.sensorhub.impl.service.federation.oshconnect.ControlStream;
+import org.sensorhub.impl.service.federation.oshconnect.Datastream;
+import org.sensorhub.impl.service.federation.oshconnect.Node;
+import org.sensorhub.impl.service.federation.oshconnect.System;
 
-import com.google.gson.Gson;
-import com.google.gson.JsonObject;
+import static org.sensorhub.impl.service.federation.BrokerLogging.log;
 
-public class CommanderNode {
+/**
+ * Port of nodes.CommanderNode.
+ */
+public class CommanderNode extends BrokeredNode
+{
+    private final Map<String, Node> remoteNodes = new HashMap<>();
+    private final List<Map.Entry<System, System>> systemMap = new ArrayList<>();
+    private final List<Map.Entry<Datastream, Datastream>> datastreamMap = new ArrayList<>();
+    private final List<Map.Entry<ControlStream, ControlStream>> controlstreamMap = new ArrayList<>();
 
-    private static final Logger log = LoggerFactory.getLogger(CommanderNode.class);
-
-    private NodeEnvData nodeEnvData;
-    private HttpClient httpClient;
-    private Gson gson;
-
-    public CommanderNode(NodeEnvData nodeEnvData) {
-        this.nodeEnvData = nodeEnvData;
-        this.httpClient = HttpClient.newHttpClient();
-        this.gson = new Gson();
+    public CommanderNode(Node node)
+    {
+        super(node);
     }
 
-    public String createSystem(SystemInfo system) throws IOException, InterruptedException {
-        String url = nodeEnvData.getBaseUrl() + "/systems";
-
-        JsonObject body = system.toJson();
-        body.remove("id");
-
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(url))
-                .header("Content-Type", "application/json")
-                .header("Authorization", getAuthHeader())
-                .POST(HttpRequest.BodyPublishers.ofString(gson.toJson(body)))
-                .build();
-
-        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-
-        if (response.statusCode() >= 200 && response.statusCode() < 300) {
-            String location = response.headers().firstValue("Location").orElse("");
-            return extractIdFromLocation(location);
-        }
-
-        throw new IOException("Failed to create system: HTTP " + response.statusCode());
+    public void publishEvent(Event event)
+    {
+        for (var listener : listeners)
+            listener.handleEvents(event);
     }
 
-    public String createDatastream(DatastreamInfo datastream) throws IOException, InterruptedException {
-        String systemId = datastream.getParentSystem().getMirroredId();
-        String url = nodeEnvData.getBaseUrl() + "/systems/" + systemId + "/datastreams";
+    @Override
+    @SuppressWarnings("unchecked")
+    public void handleEvents(Event event)
+    {
+        String[] parsed = parseTopic(event.topic);
+        String nodeId = parsed[0];
 
-        JsonObject body = datastream.toJson();
-        body.remove("id");
-        body.remove("system@id");
-
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(url))
-                .header("Content-Type", "application/json")
-                .header("Authorization", getAuthHeader())
-                .POST(HttpRequest.BodyPublishers.ofString(gson.toJson(body)))
-                .build();
-
-        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-
-        if (response.statusCode() >= 200 && response.statusCode() < 300) {
-            String location = response.headers().firstValue("Location").orElse("");
-            return extractIdFromLocation(location);
-        }
-
-        throw new IOException("Failed to create datastream: HTTP " + response.statusCode());
-    }
-
-    public String createControlstream(ControlstreamInfo controlstream) throws IOException, InterruptedException {
-        String systemId = controlstream.getParentSystem().getMirroredId();
-        String url = nodeEnvData.getBaseUrl() + "/systems/" + systemId + "/controlstreams";
-
-        JsonObject body = controlstream.toJson();
-        body.remove("id");
-        body.remove("system@id");
-
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(url))
-                .header("Content-Type", "application/json")
-                .header("Authorization", getAuthHeader())
-                .POST(HttpRequest.BodyPublishers.ofString(gson.toJson(body)))
-                .build();
-
-        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-
-        if (response.statusCode() >= 200 && response.statusCode() < 300) {
-            String location = response.headers().firstValue("Location").orElse("");
-            return extractIdFromLocation(location);
-        }
-
-        throw new IOException("Failed to create controlstream: HTTP " + response.statusCode());
-    }
-
-    public void postObservation(String datastreamId, JsonObject observation) throws IOException, InterruptedException {
-        String url = nodeEnvData.getBaseUrl() + "/datastreams/" + datastreamId + "/observations";
-
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(url))
-                .header("Content-Type", "application/json")
-                .header("Authorization", getAuthHeader())
-                .POST(HttpRequest.BodyPublishers.ofString(gson.toJson(observation)))
-                .build();
-
-        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-
-        if (response.statusCode() < 200 || response.statusCode() >= 300) {
-            log.error("Failed to post observation: HTTP {}", response.statusCode());
+        // Handle specific types first
+        switch (event.type)
+        {
+            case ADD_REMOTE_NODE:
+                log.debug("CommanderNode received ADD_REMOTE_NODE event: {}", nodeId);
+                remoteNodes.put(nodeId, (Node) ((Map<String, Object>) event.data).get("node"));
+                break;
+            case NEW_OBSERVATION:
+                log.debug("CommanderNode received NEW_OBSERVATION event: {}", event);
+                break;
+            case ADD_DATASTREAM:
+                log.debug("CommanderNode received ADD_DATASTREAM event: {}", event);
+                break;
+            case ADD_COMMANDER:
+                return;
+            case ADD_CONTROLSTREAM:
+                log.debug("CommanderNode received ADD_CONTROLSTREAM event: {}", event);
+                break;
+            case ADD_SYSTEM:
+                log.debug("CommanderNode received ADD_SYSTEM event: {}", event);
+                handleNewSystem(event);
+                break;
+            default:
+                return;
         }
     }
 
-    public void subscribeToCommands(String controlstreamId, Consumer<JsonObject> callback) {
-        // MQTT subscription would be implemented here
-        // For now, polling approach is used in the service
+    @SuppressWarnings("unchecked")
+    public void handleNewSystem(Event event)
+    {
+        // parse event topic to find target remote node
+        String[] parsed = parseTopic(event.topic);
+        String nodeId = parsed[0];
+        Node targetNode = remoteNodes.get(nodeId);
+        if (targetNode == null)
+            return;
+        // The Python source deep-copies the system here; the wrapper carries no
+        // clone, so the reference is reused. (insert_resource=True POSTs it.)
+        System sysCopy = (System) ((Map<String, Object>) event.data).get("system");
+        targetNode.addSystem(sysCopy, true);
     }
 
-    private String getAuthHeader() {
-        if (nodeEnvData.getAuth() != null && "basic".equals(nodeEnvData.getAuth().getType())) {
-            String credentials = nodeEnvData.getAuth().getUsername() + ":" + nodeEnvData.getAuth().getPassword();
-            return "Basic " + Base64.getEncoder().encodeToString(credentials.getBytes());
-        }
-        return "";
+    public Map<String, Node> getRemoteNodes()
+    {
+        return remoteNodes;
     }
 
-    private String extractIdFromLocation(String location) {
-        if (location == null || location.isEmpty()) {
-            return "";
-        }
-        String[] parts = location.split("/");
-        return parts[parts.length - 1];
+    public List<Map.Entry<System, System>> getSystemMap()
+    {
+        return systemMap;
     }
 
-    public NodeEnvData getNodeEnvData() {
-        return nodeEnvData;
+    public List<Map.Entry<Datastream, Datastream>> getDatastreamMap()
+    {
+        return datastreamMap;
+    }
+
+    public List<Map.Entry<ControlStream, ControlStream>> getControlstreamMap()
+    {
+        return controlstreamMap;
     }
 }

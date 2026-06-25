@@ -1,6 +1,10 @@
 package org.sensorhub.impl.service.federation.events;
 
-public enum DefaultEventTypes {
+/**
+ * Port of events.DefaultEventTypes.
+ */
+public enum DefaultEventTypes
+{
     ADD_COMMANDER("add_commander"),
     REMOVE_COMMANDER("remove_commander"),
     ADD_REMOTE_NODE("add_remote_node"),
@@ -17,11 +21,13 @@ public enum DefaultEventTypes {
 
     private final String value;
 
-    DefaultEventTypes(String value) {
+    DefaultEventTypes(String value)
+    {
         this.value = value;
     }
 
-    public String getValue() {
+    public String value()
+    {
         return value;
     }
 }

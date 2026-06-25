@@ -5,99 +5,96 @@ import java.util.ArrayList;
 import java.util.Deque;
 import java.util.List;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+/**
+ * Port of events.EventHandler. In Python this is a singleton (``__new__``)
+ * whose listener collections are class-level attributes; that shared state is
+ * reproduced here with static fields, so every {@code new EventHandler()}
+ * observes the same listeners (matching the Python semantics).
+ */
+public class EventHandler
+{
+    private static final List<IEventListener> listeners = new ArrayList<>();
+    private static final List<IEventListener> toAdd = new ArrayList<>();
+    private static final List<IEventListener> toRemove = new ArrayList<>();
+    private static final Deque<Event> eventQueue = new ArrayDeque<>();
+    private static boolean publishLock = false;
 
-public class EventHandler {
-
-    private static final Logger log = LoggerFactory.getLogger(EventHandler.class);
-
-    private static EventHandler instance;
-
-    private List<IEventListener> listeners;
-    private List<IEventListener> toAdd;
-    private List<IEventListener> toRemove;
-    private Deque<Event> eventQueue;
-    private boolean publishLock;
-
-    private EventHandler() {
-        this.listeners = new ArrayList<>();
-        this.toAdd = new ArrayList<>();
-        this.toRemove = new ArrayList<>();
-        this.eventQueue = new ArrayDeque<>();
-        this.publishLock = false;
-    }
-
-    public static synchronized EventHandler getInstance() {
-        if (instance == null) {
-            instance = new EventHandler();
-        }
-        return instance;
-    }
-
-    public void registerListener(IEventListener listener) {
-        if (!listeners.contains(listener)) {
-            if (!publishLock) {
+    public void registerListener(IEventListener listener)
+    {
+        if (!listeners.contains(listener))
+        {
+            if (!publishLock)
                 listeners.add(listener);
-            } else {
+            else
                 toAdd.add(listener);
-            }
         }
     }
 
-    public void unregisterListener(IEventListener listener) {
-        if (!publishLock) {
+    public void unregisterListener(IEventListener listener)
+    {
+        if (!publishLock)
             listeners.remove(listener);
-        } else {
+        else
             toRemove.add(listener);
-        }
     }
 
-    public void publish(Event evt) {
-        if (publishLock) {
+    public void publish(Event evt)
+    {
+        if (publishLock)
+        {
             eventQueue.add(evt);
-        } else {
+        }
+        else
+        {
             publishLock = true;
-
-            try {
-                for (IEventListener listener : listeners) {
+            try
+            {
+                for (IEventListener listener : listeners)
                     listener.handleEvents(evt);
-                }
-            } catch (Exception e) {
-                log.error("Error publishing event: {}", e.getMessage());
-            } finally {
+            }
+            catch (Exception e)
+            {
+                // TODO: handle a more specific error
+                System.out.println("Error publishing event: " + e);
+            }
+            finally
+            {
                 publishLock = false;
                 commitChanges();
             }
         }
     }
 
-    private void commitChanges() {
+    public void commitChanges()
+    {
         commitRemoves();
         commitAdds();
 
-        while (!eventQueue.isEmpty()) {
+        while (!eventQueue.isEmpty())
             publish(eventQueue.pollFirst());
-        }
     }
 
-    private void commitAdds() {
+    public void commitAdds()
+    {
         listeners.addAll(toAdd);
         toAdd.clear();
     }
 
-    private void commitRemoves() {
+    public void commitRemoves()
+    {
         listeners.removeAll(toRemove);
         toRemove.clear();
     }
 
-    public void clearListeners() {
+    public void clearListeners()
+    {
         listeners.clear();
         toAdd.clear();
         toRemove.clear();
     }
 
-    public int getNumListeners() {
+    public int getNumListeners()
+    {
         return listeners.size();
     }
 }

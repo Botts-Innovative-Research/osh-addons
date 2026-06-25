@@ -12,27 +12,12 @@ Copyright (C) 2012-2021 Sensia Software LLC. All Rights Reserved.
  
 ******************************* END LICENSE BLOCK ***************************/
 
-package org.sensorhub.impl.service.federation;
+package com.hivemq.extension.sdk.api.client.parameter;
 
-import org.sensorhub.api.module.IModule;
-import org.sensorhub.api.module.IModuleProvider;
-import org.sensorhub.api.module.ModuleConfig;
-import org.sensorhub.impl.module.JarModuleProvider;
-
-
-public class FederationBrokerDescriptor extends JarModuleProvider implements IModuleProvider
+/*
+ * Tagging interface missing from hiveMQ jar
+ */
+public interface ClientTlsInformation
 {
-    
-    @Override
-    public Class<? extends IModule<?>> getModuleClass()
-    {
-        return FederatedBrokerService.class;
-    }
 
-
-    @Override
-    public Class<? extends ModuleConfig> getModuleConfigClass()
-    {
-        return FederatedBrokerConfig.class;
-    }
 }

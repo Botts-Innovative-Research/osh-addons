@@ -17,6 +17,7 @@ dependencies {
   implementation project(':sensorhub-service-mqtt-hivemq')
   implementation project(':sensorhub-service-sensorthings')
   implementation project(':sensorhub-security-oauth')
+  implementation project(':sensorhub-service-federation')
   //implementation project(':sensorhub-security-keycloak')
   //implementation project(':sensorhub-storage-h2')
   //implementation project(':sensorhub-storage-es')

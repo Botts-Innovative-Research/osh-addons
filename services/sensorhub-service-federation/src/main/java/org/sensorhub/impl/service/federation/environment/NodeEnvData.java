@@ -1,103 +1,37 @@
 package org.sensorhub.impl.service.federation.environment;
 
-import com.google.gson.annotations.SerializedName;
+import org.sensorhub.api.config.DisplayInfo;
 
-public class NodeEnvData {
+/**
+ * Port of environment.NodeEnvData. Also serves as an admin-UI config object:
+ * one entry of the {@code nodes} array that lived in broker-env2.json.
+ */
+public class NodeEnvData
+{
+    @DisplayInfo(label = "Name", desc = "Display name of the node")
+    public String name;
 
-    private String name;
-    private String protocol;
-    private String address;
-    private int port;
+    @DisplayInfo(label = "Protocol", desc = "Connection protocol (http or https)")
+    public String protocol = "http";
 
-    @SerializedName("is_commander")
-    private boolean isCommander;
+    @DisplayInfo(label = "Address", desc = "Hostname or IP address of the node")
+    public String address;
 
-    @SerializedName("sensorhub_root")
-    private String sensorhubRoot;
+    @DisplayInfo(label = "Port", desc = "HTTP API port of the node")
+    public int port;
 
-    @SerializedName("api_root")
-    private String apiRoot;
+    @DisplayInfo(label = "Is Commander", desc = "True if this node is the central commander node")
+    public boolean isCommander = false;
 
-    private AuthData auth;
+    @DisplayInfo(label = "SensorHub Root", desc = "Root path segment of the node (e.g. sensorhub)")
+    public String sensorhubRoot = "sensorhub";
 
-    @SerializedName("mqtt_port")
-    private int mqttPort;
+    @DisplayInfo(label = "API Root", desc = "API root path of the node (e.g. sensorhub/api)")
+    public String apiRoot = "sensorhub/api";
 
-    public NodeEnvData() {}
+    @DisplayInfo(label = "Auth", desc = "Authentication credentials for the node")
+    public AuthData auth = new AuthData();
 
-    public String getName() {
-        return name;
-    }
-
-    public void setName(String name) {
-        this.name = name;
-    }
-
-    public String getProtocol() {
-        return protocol;
-    }
-
-    public void setProtocol(String protocol) {
-        this.protocol = protocol;
-    }
-
-    public String getAddress() {
-        return address;
-    }
-
-    public void setAddress(String address) {
-        this.address = address;
-    }
-
-    public int getPort() {
-        return port;
-    }
-
-    public void setPort(int port) {
-        this.port = port;
-    }
-
-    public boolean isCommander() {
-        return isCommander;
-    }
-
-    public void setCommander(boolean commander) {
-        isCommander = commander;
-    }
-
-    public String getSensorhubRoot() {
-        return sensorhubRoot;
-    }
-
-    public void setSensorhubRoot(String sensorhubRoot) {
-        this.sensorhubRoot = sensorhubRoot;
-    }
-
-    public String getApiRoot() {
-        return apiRoot;
-    }
-
-    public void setApiRoot(String apiRoot) {
-        this.apiRoot = apiRoot;
-    }
-
-    public AuthData getAuth() {
-        return auth;
-    }
-
-    public void setAuth(AuthData auth) {
-        this.auth = auth;
-    }
-
-    public int getMqttPort() {
-        return mqttPort;
-    }
-
-    public void setMqttPort(int mqttPort) {
-        this.mqttPort = mqttPort;
-    }
-
-    public String getBaseUrl() {
-        return protocol + "://" + address + ":" + port + apiRoot;
-    }
+    @DisplayInfo(label = "MQTT Port", desc = "MQTT port of the node")
+    public int mqttPort = 1883;
 }
