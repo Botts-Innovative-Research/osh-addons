@@ -10,7 +10,7 @@
  Copyright (C) 2026 GeoRobotix Innovative Research, Inc. All Rights Reserved.
  ******************************* END LICENSE BLOCK ***************************/
 
-package org.sensorhub.impl.sensor.rtmp;
+package org.sensorhub.impl.sensor.rtmpcam;
 
 import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.api.module.ModuleEvent;
@@ -18,7 +18,11 @@ import org.sensorhub.api.sensor.SensorException;
 import org.sensorhub.impl.sensor.AbstractSensorModule;
 import org.sensorhub.impl.sensor.ffmpeg.outputs.AudioOutput;
 import org.sensorhub.impl.sensor.ffmpeg.outputs.VideoOutput;
-import org.sensorhub.impl.sensor.rtmp.config.RtmpConfig;
+import org.sensorhub.impl.sensor.rtmpcam.config.ConnectionConfig;
+import org.sensorhub.impl.sensor.rtmpcam.config.RtmpConfig;
+import org.sensorhub.impl.sensor.rtmpcam.connection.RtmpConnectionContext;
+import org.sensorhub.impl.sensor.rtmpcam.connection.RtmpListener;
+import org.sensorhub.impl.sensor.rtmpcam.connection.RtmpListenerManager;
 import org.sensorhub.mpegts.MpegTsProcessor;
 import org.sensorhub.utils.Async;
 
@@ -39,10 +43,10 @@ import static org.bytedeco.ffmpeg.global.avutil.av_log_set_callback;
  * </p>
  * <p>
  * Only one RTMP driver instance may use a given port at a time. Port ownership
- * is tracked through a shared {@link RtmpPortSingleton}.
+ * is tracked through a shared {@link RtmpListenerManager}.
  * </p>
  */
-public class RtmpDriver extends AbstractSensorModule<RtmpConfig> {
+public class RtmpDriver extends AbstractSensorModule<RtmpConfig> implements RtmpListener {
     private static final String COMMAND_LINE_ARGS = "-timeout 0 -listen 1 -username test -password test";
     private static final int EXECUTOR_JOIN_TIMEOUT = 10;
     private static final TimeUnit EXECUTOR_JOIN_TIME_UNIT = TimeUnit.SECONDS;
@@ -50,13 +54,12 @@ public class RtmpDriver extends AbstractSensorModule<RtmpConfig> {
     private static final TimeUnit HEARTBEAT_TIME_UNIT = TimeUnit.SECONDS;
     private static final int MAX_STARTUP_WAIT_TIME_MS = 5000;
 
-    private final RtmpPortSingleton portSingleton = RtmpPortSingleton.getInstance();
+    private final RtmpListenerManager portSingleton = RtmpListenerManager.getInstance();
     private ExecutorService executorService;
     private ExecutorService videoExecutorService;
     private ExecutorService audioExecutorService;
     private ScheduledExecutorService heartbeatExecutorService;
 
-    final AtomicReference<MpegTsProcessor> mpegTsProcessor = new AtomicReference<>();
     final AtomicReference<VideoOutput<RtmpDriver>> videoOutput = new AtomicReference<>();
     final AtomicReference<AudioOutput<RtmpDriver>> audioOutput = new AtomicReference<>();
 
@@ -93,6 +96,8 @@ public class RtmpDriver extends AbstractSensorModule<RtmpConfig> {
             generateUniqueID("urn:osh:sensor:rtmp:", config.serialNumber);
             generateXmlID("RTMP_", config.serialNumber);
         }
+
+
 
         portSingleton.removeConnection(connectionPort);
 
@@ -500,5 +505,29 @@ public class RtmpDriver extends AbstractSensorModule<RtmpConfig> {
     @Override
     public boolean isConnected() {
         return isConnected;
+    }
+
+    @Override
+    public ConnectionConfig config() {
+        return config.connectionConfig;
+    }
+
+    @Override
+    public void publish(byte[] data, int streamIndex, long pts, boolean isVideo) {
+        if (isVideo) {
+            videoOutput.get().
+        }
+    }
+
+    @Override
+    public void onStreamConnected(RtmpConnectionContext ctx) {
+
+    }
+
+    public void onStreamInfo()
+
+    @Override
+    public void onStreamDisconnected() {
+
     }
 }
