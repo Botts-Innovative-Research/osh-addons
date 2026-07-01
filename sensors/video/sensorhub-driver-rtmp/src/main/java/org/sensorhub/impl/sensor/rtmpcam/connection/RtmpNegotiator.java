@@ -183,7 +183,7 @@ public class RtmpNegotiator {
                             sendConnectResult(txId);
                         }
 
-                        case "releaseStream", "getStreamLength", "FCSubscribe" -> { /* no-op */ }
+                        case "releaseStream", "getStreamLength", "FCSubscribe", "_checkbw" -> { /* no-op */ }
 
                         case "FCPublish" -> {
                             double txId = asDouble(readAmf0Value(amf)); // txId

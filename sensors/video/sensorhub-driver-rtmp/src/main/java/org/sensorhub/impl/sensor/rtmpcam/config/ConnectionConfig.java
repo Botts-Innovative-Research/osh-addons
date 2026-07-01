@@ -24,11 +24,9 @@ public class ConnectionConfig {
 
      */
 
-    @DisplayInfo.Required
     @DisplayInfo(label = "Username")
     public String username = "";
 
-    @DisplayInfo.Required
     @DisplayInfo(label = "Password")
     public String password = "";
 
@@ -37,7 +35,6 @@ public class ConnectionConfig {
     @DisplayInfo.ValueRange(min = 1, max = 65535)
     public int port = 1935;
 
-    @DisplayInfo.Required
     @DisplayInfo(label = "Path")
     public String path = "";
 

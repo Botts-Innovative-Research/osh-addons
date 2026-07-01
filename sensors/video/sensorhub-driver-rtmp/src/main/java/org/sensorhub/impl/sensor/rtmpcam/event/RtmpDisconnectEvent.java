@@ -1,8 +1,16 @@
 package org.sensorhub.impl.sensor.rtmpcam.event;
 
-public class RtmpDisconnectEvent implements RtmpEvent<Object> {
+import org.sensorhub.impl.sensor.rtmpcam.connection.RtmpConnectionContext;
+
+public class RtmpDisconnectEvent implements RtmpEvent<RtmpConnectionContext> {
+    RtmpConnectionContext payload;
+
+    public RtmpDisconnectEvent(RtmpConnectionContext payload) {
+        this.payload = payload;
+    }
+
     @Override
-    public Object getPayload() {
-        return null;
+    public RtmpConnectionContext getPayload() {
+        return payload;
     }
 }
