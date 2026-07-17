@@ -183,7 +183,7 @@ public class ProtoSchemaWriter
 
         var state = new BuildState();
         var scopeFqn = pkg.isEmpty() ? "" : "." + pkg;
-        var rootName = uniqueMessageName(state, scopeFqn, sanitizeType(messageName, "Observation"));
+        var rootName = uniqueMessageName(state, scopeFqn, sanitizeType(messageName, "Observation"), new HashSet<>());
         var rootMsg = buildEnvelopeMessage(root, rootName, scopeFqn, state, envelope);
 
         var file = FileDescriptorProto.newBuilder()
@@ -379,13 +379,18 @@ public class ProtoSchemaWriter
         if (comp instanceof DataChoice)
             return addChoice(msg, (DataChoice) comp, fieldNum, scopeFqn, usedFieldNames, state);
 
-        // Aggregate → nested message + reference field
+        // Aggregate → nested message + reference field. The field name is
+        // reserved BEFORE the nested type name is chosen: fields and nested
+        // types share one protobuf symbol namespace per message, so a
+        // PascalCase component name ("Acceleration") must rename the TYPE
+        // (invisible to consumers), never the field.
         if (comp instanceof DataRecord || comp instanceof Vector)
         {
-            var nestedName = uniqueMessageName(state, scopeFqn, deriveTypeName(comp));
+            var fieldName = uniqueFieldName(usedFieldNames, comp.getName());
+            var nestedName = uniqueMessageName(state, scopeFqn, deriveTypeName(comp), usedFieldNames);
             msg.addNestedType(buildMessage(comp, nestedName, scopeFqn, state));
             msg.addField(FieldDescriptorProto.newBuilder()
-                .setName(uniqueFieldName(usedFieldNames, comp.getName()))
+                .setName(fieldName)
                 .setNumber(fieldNum)
                 .setLabel(Label.LABEL_OPTIONAL)
                 .setType(Type.TYPE_MESSAGE)
@@ -410,7 +415,7 @@ public class ProtoSchemaWriter
                 // (a Matrix row — proto has no repeated-of-repeated) → wrapper
                 // message holding the inner array as its single repeated field
                 // (buildMessage wraps a non-structured component automatically)
-                var nestedName = uniqueMessageName(state, scopeFqn, deriveTypeName(elt));
+                var nestedName = uniqueMessageName(state, scopeFqn, deriveTypeName(elt), usedFieldNames);
                 msg.addNestedType(buildMessage(elt, nestedName, scopeFqn, state));
                 fb.setType(Type.TYPE_MESSAGE).setTypeName(scopeFqn + "." + nestedName);
             }
@@ -478,10 +483,11 @@ public class ProtoSchemaWriter
                     item.getClass().getSimpleName() + " is not supported as a direct DataChoice item in swe+proto "
                     + "(item '" + item.getName() + "') — wrap it in a DataRecord");
 
+            var itemFieldName = uniqueFieldName(usedFieldNames, item.getName());
             FieldDescriptorProto.Builder fb;
             if (item instanceof DataRecord || item instanceof Vector)
             {
-                var nestedName = uniqueMessageName(state, scopeFqn, deriveTypeName(item));
+                var nestedName = uniqueMessageName(state, scopeFqn, deriveTypeName(item), usedFieldNames);
                 msg.addNestedType(buildMessage(item, nestedName, scopeFqn, state));
                 fb = FieldDescriptorProto.newBuilder()
                     .setType(Type.TYPE_MESSAGE)
@@ -500,7 +506,7 @@ public class ProtoSchemaWriter
             }
 
             msg.addField(fb
-                .setName(uniqueFieldName(usedFieldNames, item.getName()))
+                .setName(itemFieldName)
                 .setNumber(fieldNum + i)
                 .setLabel(Label.LABEL_OPTIONAL)
                 .setOneofIndex(oneofIndex)
@@ -617,12 +623,21 @@ public class ProtoSchemaWriter
     }
 
 
-    private String uniqueMessageName(BuildState state, String scopeFqn, String base)
+    /**
+     * Pick a nested/root message name unique among (a) message FQNs already
+     * emitted anywhere in the file and (b) the sibling symbols of the enclosing
+     * scope — protobuf validates fields, oneofs, and nested types of a message
+     * against ONE symbol namespace, so a type may not reuse a field's name.
+     * The chosen name is reserved in {@code scopeSymbols} so a later sibling
+     * field can't take it either (uniqueFieldName then suffixes that field).
+     */
+    private String uniqueMessageName(BuildState state, String scopeFqn, String base, Set<String> scopeSymbols)
     {
         var name = base;
         int n = 2;
-        while (!state.usedMessageFqns.add(scopeFqn + "." + name))
+        while (scopeSymbols.contains(name) || !state.usedMessageFqns.add(scopeFqn + "." + name))
             name = base + n++;
+        scopeSymbols.add(name);
         return name;
     }
 
