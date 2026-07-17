@@ -20,6 +20,7 @@ import org.sensorhub.impl.service.consys.proto.schema.ProtoSchemaWriter;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
+import com.google.protobuf.ByteString;
 import com.google.protobuf.Descriptors.Descriptor;
 import com.google.protobuf.Descriptors.FieldDescriptor;
 import com.google.protobuf.DynamicMessage;
@@ -187,6 +188,15 @@ public final class ProtoEncoder
 
     private static void sizeComponent(DataComponent comp, DataBlock data, int[] idx, Map<String, Integer> counts)
     {
+        // compressed binary block (video frame): opaque payload, never a size
+        // source and never walked atom-by-atom (atom getters fail) — just skip
+        // its whole uncompressed atom span in the flat index space
+        if (ProtoCompressed.isCompressed(comp))
+        {
+            idx[0] += ProtoCompressed.findBlock(data, idx[0], comp.getName()).getAtomCount();
+            return;
+        }
+
         if (comp instanceof DataArray)
         {
             var array = (DataArray) comp;
@@ -307,6 +317,23 @@ public final class ProtoEncoder
     private static int encodeComponent(DynamicMessage.Builder msg, Descriptor desc, DataComponent comp,
                                        int fieldNum, DataBlock data, int[] idx)
     {
+        // compressed binary block (e.g. a JPEG/H264 video frame) → ONE bytes
+        // field, pass-through of the compressed payload (same contract as the
+        // classic SWE BinaryDataWriter). Checked FIRST — the component is
+        // typically a DataArray whose atoms must never be walked (getters fail
+        // on a DataBlockCompressed). The flat index advances by the block's
+        // UNCOMPRESSED atom span so trailing siblings stay aligned.
+        if (ProtoCompressed.isCompressed(comp))
+        {
+            var f = field(desc, fieldNum);
+            var cb = ProtoCompressed.findBlock(data, idx[0], comp.getName());
+            var bytes = (byte[]) cb.getUnderlyingObject();
+            if (bytes != null)
+                msg.setField(f, ByteString.copyFrom(bytes));
+            idx[0] += cb.getAtomCount();
+            return fieldNum + 1;
+        }
+
         // array → repeated field. The flat DataBlock lays the K elements out
         // contiguously (K = getComponentCount(), made accurate for variable-size
         // arrays — including nested rectangular matrices — by the setData() bind

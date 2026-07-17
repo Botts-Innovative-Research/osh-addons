@@ -21,6 +21,7 @@ import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Set;
 import org.vast.util.Asserts;
+import org.sensorhub.impl.service.consys.proto.codec.ProtoCompressed;
 import com.georobotix.swecommon.SweOptions;
 import com.google.protobuf.Timestamp;
 import com.google.protobuf.DescriptorProtos.DescriptorProto;
@@ -344,6 +345,34 @@ public class ProtoSchemaWriter
     private int addComponent(DescriptorProto.Builder msg, DataComponent comp, int fieldNum,
                              String scopeFqn, Set<String> usedFieldNames, BuildState state)
     {
+        // Compressed binary block (e.g. a JPEG/H264 video frame) → ONE bytes
+        // field. The payload is an opaque compressed byte[] (DataBlockCompressed),
+        // not addressable atoms, so the component's interior structure is never
+        // expanded into fields; the codec id rides in swe_options `compression`.
+        // Checked FIRST: the component is typically a DataArray (raster image)
+        // which would otherwise fall into the repeated-field branch below.
+        var compression = ProtoCompressed.compressionOf(comp);
+        if (compression != null)
+        {
+            // uncompressedSize = the payload's logical scalar count (w*h*3 for RGB):
+            // createDataBlock() on a compressed component allocates a cheap
+            // DataBlockCompressed whose atomCount is exactly the span the runtime
+            // placeholder will have. A descriptor-only peer needs this to rebuild a
+            // correctly-sized placeholder and decode observations (the descriptor
+            // otherwise carries no dimensions).
+            long uncompressedSize = comp.createDataBlock().getAtomCount();
+            msg.addField(FieldDescriptorProto.newBuilder()
+                .setName(uniqueFieldName(usedFieldNames, comp.getName()))
+                .setNumber(fieldNum)
+                .setLabel(Label.LABEL_OPTIONAL)
+                .setType(Type.TYPE_BYTES)
+                .setOptions(sweOptions(comp).toBuilder()
+                    .setExtension(SweOptions.compression, compression)
+                    .setExtension(SweOptions.uncompressedSize, uncompressedSize)
+                    .build()));
+            return fieldNum + 1;
+        }
+
         // DataChoice → proto3 oneof: one field per choice item, exactly one of
         // which is set per message. The selection index in the SWE DataBlock
         // (atom 0 of the choice) maps to WHICH oneof field is populated.

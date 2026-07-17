@@ -18,6 +18,7 @@ package org.sensorhub.impl.service.consys.proto.codec;
 
 import org.sensorhub.impl.service.consys.proto.schema.ProtoSchemaWriter;
 import java.time.Instant;
+import com.google.protobuf.ByteString;
 import com.google.protobuf.Message;
 import com.google.protobuf.Descriptors.Descriptor;
 import com.google.protobuf.Descriptors.FieldDescriptor;
@@ -120,6 +121,14 @@ public final class ProtoDecoder
      */
     private static int prepass(Message msg, DataComponent comp, int fieldNum)
     {
+        // compressed binary block → single bytes field: nothing to size or
+        // select (checked FIRST — the component is typically a DataArray, and
+        // the array branch below would call getRepeatedFieldCount on the
+        // non-repeated bytes field). createDataBlock() allocates the
+        // DataBlockCompressed placeholder from the component's encodingInfo.
+        if (ProtoCompressed.isCompressed(comp))
+            return fieldNum + 1;
+
         if (comp instanceof DataChoice)
         {
             var choice = (DataChoice) comp;
@@ -216,6 +225,21 @@ public final class ProtoDecoder
 
     private static int decodeComponent(Message msg, DataComponent comp, int fieldNum, DataBlock block, int[] idx)
     {
+        // compressed binary block (e.g. a JPEG/H264 video frame) ← ONE bytes
+        // field. Never setAtom (DataBlockCompressed setters throw); instead fill
+        // the pre-allocated DataBlockCompressed placeholder that createDataBlock()
+        // produced from the component's encodingInfo — the same contract as the
+        // classic SWE BinaryDataParser. The flat index advances by the block's
+        // UNCOMPRESSED atom span so trailing siblings stay aligned.
+        if (ProtoCompressed.isCompressed(comp))
+        {
+            var f = field(msg.getDescriptorForType(), fieldNum);
+            var cb = ProtoCompressed.findBlock(block, idx[0], comp.getName());
+            cb.setUnderlyingObject(((ByteString) msg.getField(f)).toByteArray());
+            idx[0] += cb.getAtomCount();
+            return fieldNum + 1;
+        }
+
         // array → repeated field. The block was already sized for K =
         // getComponentCount() contiguous elements (variable-size arrays were
         // updateSize()'d from the wire in prepass()), so the flat atom index

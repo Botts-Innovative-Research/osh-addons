@@ -104,17 +104,20 @@ public class ObsBindingProto extends ResourceBinding<BigId, IObsData>
     {
         super(ctx, idEncoders);
         this.contextData = (ObsHandlerContextData) ctx.getData();
-        // private copy: ProtoRecordDecoder mutates DataChoice selection state,
-        // and the dsInfo record structure is shared across requests
-        this.recordStruct = dsInfo.getRecordStructure().copy();
+        // private copy (ProtoRecordDecoder mutates DataChoice selection state,
+        // and the dsInfo record structure is shared across requests) with the
+        // datastream's binary encoding assigned, so compressed binary-block
+        // components (video frames) are detected by schema writer and codec
+        this.recordStruct = ProtoFormat.structWithEncoding(dsInfo);
         this.timeIndexer = SWEHelper.getTimeStampIndexer(dsInfo.getRecordStructure());
         try
         {
             // rebuilt per request (schema fingerprint memoization is parked —
             // see GeneratedSchemaCache). ctx.getParentID() is the datastream's
             // internal ID (always set here: custom obs bindings are only used
-            // for single-datastream requests).
-            this.descriptor = schemas.get(ctx.getParentID(), dsInfo.getRecordStructure()).descriptor;
+            // for single-datastream requests). Built from the SAME encoding-
+            // assigned struct the codec walks, so field shapes always agree.
+            this.descriptor = schemas.get(ctx.getParentID(), recordStruct).descriptor;
         }
         catch (DescriptorValidationException e)
         {

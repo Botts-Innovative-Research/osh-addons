@@ -15,7 +15,8 @@
 //   file commit: 74647886a1dcc8d51399814729c1bc6d4c04c648  (2024-04-30)
 //
 // Local additions (after vendoring): explicit `syntax = "proto3";` (upstream
-// omits it and defaults to proto2).
+// omits it and defaults to proto2), and the `compression` extension (1100) for
+// opaque compressed binary-block payloads (see the extension block below).
 //
 // **This is the sole working copy for now.** An earlier plan kept a
 // coordinated downstream re-mirror inside the consys-proto OSH service
@@ -62,4 +63,20 @@ extend google.protobuf.FieldOptions {
   optional string referenceFrame = 1007;
   optional string localFrame = 1008;
   optional string referenceTime = 1009;
+
+  // ---- local additions (not yet upstreamed) ----
+  // Numbered from 1100 to stay clear of future upstream 10xx additions.
+
+  // Compression codec id ("JPEG", "H264", ...) for an opaque `bytes` field
+  // carrying a SWE binary-block payload (BinaryEncoding/BinaryBlock component,
+  // e.g. a compressed video frame). Consumers decode the bytes with the named
+  // codec; the SWE component tree describes the *uncompressed* structure.
+  optional string compression = 1100;
+
+  // Uncompressed logical scalar count of a `compression`-tagged bytes field
+  // (e.g. width*height*3 for an RGB frame). Lets a peer that only has this
+  // descriptor rebuild a correctly-sized SWE placeholder for the payload —
+  // required to DECODE such observations against a descriptor-derived
+  // structure (the descriptor otherwise carries no dimensions).
+  optional int64 uncompressedSize = 1101;
 }

@@ -101,7 +101,9 @@ public class DataStreamSchemaBindingProto extends ResourceBindingJson<DataStream
         GeneratedSchemaCache.Entry entry;
         try
         {
-            entry = schemas.get(key.getInternalID(), dsInfo.getRecordStructure());
+            // encoding-assigned struct: compressed binary-block components (video)
+            // must serve the same single-bytes-field schema the obs binding encodes
+            entry = schemas.get(key.getInternalID(), ProtoFormat.structWithEncoding(dsInfo));
         }
         catch (com.google.protobuf.Descriptors.DescriptorValidationException e)
         {

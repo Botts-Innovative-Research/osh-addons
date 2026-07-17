@@ -19,6 +19,8 @@ package org.sensorhub.impl.service.consys.proto.schema;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import org.vast.data.AbstractDataComponentImpl;
+import org.vast.data.BinaryBlockImpl;
 import org.vast.swe.SWEHelper;
 import com.georobotix.swecommon.SweOptions;
 import com.google.protobuf.DescriptorProtos.FieldOptions;
@@ -172,7 +174,11 @@ public class ProtoSchemaReader
     private DataComponent buildComponent(FieldDescriptor f)
     {
         DataComponent comp;
-        if (f.isRepeated())
+        if (f.getType() == FieldDescriptor.Type.BYTES)
+        {
+            comp = buildCompressed(f);
+        }
+        else if (f.isRepeated())
         {
             comp = buildArray(f);
         }
@@ -235,6 +241,45 @@ public class ProtoSchemaReader
     private static boolean isArrayWrapper(Descriptor mt)
     {
         return mt.getFields().size() == 1 && mt.getFields().get(0).isRepeated();
+    }
+
+
+    /**
+     * Reconstruct a compressed binary-block component (e.g. a video frame) from
+     * a {@code bytes} field: an opaque byte {@code DataArray} tagged with a
+     * compressed {@link net.opengis.swe.v20.BinaryBlock} encodingInfo (codec id
+     * from the {@code swe_options} {@code compression} extension), so
+     * {@code createDataBlock()} allocates a {@code DataBlockCompressed} and the
+     * decoder fills it via {@code setUnderlyingObject}.
+     *
+     * <p>The uncompressed interior structure is not carried by the descriptor,
+     * but its logical scalar count rides in the {@code uncompressedSize}
+     * extension: the array is rebuilt as a FIXED-size byte array of that length,
+     * so the placeholder's atom span matches the writer side and the codec's
+     * flat-index bookkeeping (incl. trailing siblings) works — this is what
+     * makes descriptor-only (foreign) ingest of compressed observations
+     * decodable. A descriptor from an older peer without the extension falls
+     * back to a variable-size array: the schema still registers, but decoding
+     * such observations fails loudly (zero-span placeholder).</p>
+     */
+    private DataComponent buildCompressed(FieldDescriptor f)
+    {
+        var elt = swe.createCount().dataType(DataType.BYTE).build();
+        elt.setName("byte");
+
+        var array = swe.newDataArray();
+        array.setElementType("byte", elt);
+        long size = f.getOptions().getExtension(SweOptions.uncompressedSize);
+        if (size > 0)
+            array.setElementCount(swe.createCount().value((int) size).build());  // fixed size = atom span
+        else
+            array.setElementCount(swe.createCount().build());  // legacy: implicit variable size
+
+        var block = new BinaryBlockImpl();
+        var compression = f.getOptions().getExtension(SweOptions.compression);
+        block.setCompression(compression == null || compression.isEmpty() ? "unknown" : compression);
+        ((AbstractDataComponentImpl) array).setEncodingInfo(block);
+        return array;
     }
 
 
