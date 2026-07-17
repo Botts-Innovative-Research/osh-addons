@@ -181,4 +181,115 @@ public class TestProtoSchemaWriter
         var parsedLoc = (DynamicMessage) parsed.getField(locField);
         assertEquals(34.7d, (double) parsedLoc.getField(latField), 1e-9);
     }
+
+
+    /** A record whose vector field is already PascalCase, exactly like the
+     *  mavsdk driver outputs (field "Acceleration" → derived nested type name
+     *  "Acceleration"). Fields and nested types share one protobuf symbol
+     *  namespace per message, so the TYPE must be renamed and the field name
+     *  preserved. */
+    static DataComponent buildPascalCaseRecord(String name)
+    {
+        var swe = new SWEHelper();
+        return swe.createRecord()
+            .name(name)
+            .addSamplingTimeIsoUTC("sampleTime")
+            .addField(name, swe.createVector()
+                .definition("http://x/" + name)
+                .addCoordinate("x", swe.createQuantity().uomCode("m").dataType(DataType.DOUBLE).build())
+                .addCoordinate("y", swe.createQuantity().uomCode("m").dataType(DataType.DOUBLE).build())
+                .addCoordinate("z", swe.createQuantity().uomCode("m").dataType(DataType.DOUBLE).build()))
+            .build();
+    }
+
+
+    @Test
+    public void testPascalCaseFieldDoesNotCollideWithNestedType() throws Exception
+    {
+        var result = writer.write(buildPascalCaseRecord("Acceleration"), "datastreams/ds1/obs.proto", PKG, MSG);
+        var desc = cache.register("ds1", result.toByteArray(), result.messageTypeName);
+
+        // field keeps the component's name; only the type is renamed
+        var field = desc.findFieldByName("Acceleration");
+        assertNotNull("field keeps its wire name", field);
+        assertEquals("Acceleration2", field.getMessageType().getName());
+        assertNotNull(field.getMessageType().findFieldByName("x"));
+    }
+
+
+    /** All five mavsdk telemetry stream names that hit the collision live. */
+    @Test
+    public void testMavsdkTelemetryShapesResolve() throws Exception
+    {
+        for (var name : new String[] {"Acceleration", "AngularVelocity", "Attitude", "MagneticField", "Velocity"})
+        {
+            var result = writer.write(buildPascalCaseRecord(name), "datastreams/" + name + "/obs.proto", PKG, MSG);
+            var desc = cache.register(name, result.toByteArray(), result.messageTypeName);
+            assertNotNull(name + " field", desc.findFieldByName(name));
+        }
+    }
+
+
+    /** Same collision one scope down (buildMessage path): a nested record whose
+     *  own child repeats the record's PascalCase name. */
+    @Test
+    public void testNestedScopeCollisionResolves() throws Exception
+    {
+        var swe = new SWEHelper();
+        var rec = swe.createRecord()
+            .addSamplingTimeIsoUTC("time")
+            .addField("Attitude", swe.createRecord()
+                .addField("Attitude", swe.createVector()
+                    .addCoordinate("roll", swe.createQuantity().uomCode("deg").dataType(DataType.DOUBLE).build())
+                    .addCoordinate("pitch", swe.createQuantity().uomCode("deg").dataType(DataType.DOUBLE).build())))
+            .build();
+
+        var result = writer.write(rec, "datastreams/ds1/obs.proto", PKG, MSG);
+        var desc = cache.register("ds1", result.toByteArray(), result.messageTypeName);
+
+        var outer = desc.findFieldByName("Attitude");
+        var inner = outer.getMessageType().findFieldByName("Attitude");
+        assertNotNull(inner);
+        assertNotNull(inner.getMessageType().findFieldByName("roll"));
+    }
+
+
+    /** Pathological ordering: a lowercase vector claims type name "Acceleration",
+     *  then a later sibling FIELD wants the same name. The type name is reserved,
+     *  so the later field gets the deterministic numeric suffix. */
+    @Test
+    public void testLaterSiblingFieldAvoidsReservedTypeName() throws Exception
+    {
+        var swe = new SWEHelper();
+        var rec = swe.createRecord()
+            .addField("acceleration", swe.createVector()
+                .addCoordinate("x", swe.createQuantity().uomCode("m").dataType(DataType.DOUBLE).build()))
+            .addField("Acceleration", swe.createQuantity().uomCode("m").dataType(DataType.DOUBLE))
+            .build();
+
+        var result = writer.write(rec, "datastreams/ds1/obs.proto", PKG, MSG);
+        var desc = cache.register("ds1", result.toByteArray(), result.messageTypeName);
+
+        assertNotNull(desc.findFieldByName("acceleration"));               // vector field untouched
+        assertEquals("Acceleration", desc.findFieldByName("acceleration").getMessageType().getName());
+        assertNotNull("later scalar renamed", desc.findFieldByName("Acceleration2"));
+    }
+
+
+    /** The renamed type is not load-bearing for I/O: round-trip a message
+     *  through the collision-fixed schema. */
+    @Test
+    public void testCollisionSchemaRoundTrips() throws Exception
+    {
+        var result = writer.write(buildPascalCaseRecord("Velocity"), "datastreams/ds1/obs.proto", PKG, MSG);
+        var desc = cache.register("ds1", result.toByteArray(), result.messageTypeName);
+
+        var velField = desc.findFieldByName("Velocity");
+        var xField = velField.getMessageType().findFieldByName("x");
+        var vel = DynamicMessage.newBuilder(velField.getMessageType()).setField(xField, 1.5d).build();
+        var obs = DynamicMessage.newBuilder(desc).setField(velField, vel).build();
+
+        var parsed = DynamicMessage.parseFrom(desc, obs.toByteArray());
+        assertEquals(1.5d, (double) ((DynamicMessage) parsed.getField(velField)).getField(xField), 1e-9);
+    }
 }
