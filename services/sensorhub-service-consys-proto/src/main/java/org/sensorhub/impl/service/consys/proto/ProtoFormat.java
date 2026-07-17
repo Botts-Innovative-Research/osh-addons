@@ -24,8 +24,11 @@ import org.sensorhub.impl.service.consys.proto.codec.ProtoArrays;
 import org.sensorhub.impl.service.consys.proto.schema.GeneratedSchemaCache;
 import org.sensorhub.impl.service.consys.proto.schema.ProtoSchemaWriter;
 import java.io.IOException;
+import net.opengis.swe.v20.BinaryEncoding;
 import net.opengis.swe.v20.DataArray;
 import net.opengis.swe.v20.DataComponent;
+import org.vast.cdm.common.CDMException;
+import org.vast.swe.SWEHelper;
 import org.sensorhub.api.command.ICommandData;
 import org.sensorhub.api.command.ICommandStreamInfo;
 import org.sensorhub.api.common.BigId;
@@ -102,7 +105,40 @@ public final class ProtoFormat implements CustomObsFormat
         // handle, so an unsupported datastream doesn't list a format that then
         // 500s on encode. Unsupported: Geometry / unmapped scalars (the schema
         // build below throws) and arrays with a non-flat (DataBlockList) element.
-        return canEncode(dsInfo.getRecordStructure());
+        // Judged on the ENCODING-ASSIGNED struct (same as the bindings use), so a
+        // compressed video stream is evaluated as its real bytes-field schema and
+        // not as a giant nested pixel structure.
+        return canEncode(structWithEncoding(dsInfo));
+    }
+
+
+    /**
+     * The record structure the schema writer and codec must be fed: a private
+     * copy of {@code dsInfo}'s record structure with the datastream's
+     * {@link BinaryEncoding} (if any) assigned onto the component tree, so
+     * compressed binary-block components (video frames) carry their
+     * {@code BinaryBlock} encodingInfo and are detected by
+     * {@code ProtoCompressed}. Every descriptor-building site MUST use this —
+     * the served schema, the compatibility check, and the value codec have to
+     * agree on the same (bytes-field) shape.
+     */
+    public static DataComponent structWithEncoding(IDataStreamInfo dsInfo)
+    {
+        var struct = dsInfo.getRecordStructure().copy();
+        var enc = dsInfo.getRecordEncoding();
+        if (enc instanceof BinaryEncoding)
+        {
+            try
+            {
+                SWEHelper.assignBinaryEncoding(struct, (BinaryEncoding) enc);
+            }
+            catch (CDMException e)
+            {
+                throw new IllegalStateException(
+                    "Invalid binary encoding on datastream record structure", e);
+            }
+        }
+        return struct;
     }
 
 
