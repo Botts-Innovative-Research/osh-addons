@@ -94,12 +94,7 @@ public class UnmannedControlHome extends AbstractSensorControl<UnmannedSystem>
                 .label(SENSOR_CONTROL_LABEL)
                 .description(SENSOR_CONTROL_DESCRIPTION)
                 .definition(SWEHelper.getPropertyUri("Control"))
-                .addField("locationVectorLL", factory.createVector()
-                        .definition(SWEHelper.getPropertyUri("Location"))
-                        .addCoordinate("Latitude", factory.createQuantity()
-                                .uom("deg"))
-                        .addCoordinate("Longitude", factory.createQuantity()
-                                .uom("deg")))
+                .addField("locationVectorLL", factory.createLocationVectorLatLon())
                 .build();
     }
 
