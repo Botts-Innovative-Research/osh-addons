@@ -107,11 +107,10 @@ public class UnmannedControlDriveToLocation extends AbstractSensorControl<Unmann
                 .description(SENSOR_CONTROL_DESCRIPTION)
                 .definition(SWEHelper.getPropertyUri("Control"))
                 .addField("locationVectorLL", factory.createVector()
-                        .definition(SWEHelper.getPropertyUri("Location"))
-                        .addCoordinate("Latitude", factory.createQuantity()
-                                .uom("deg"))
-                        .addCoordinate("Longitude", factory.createQuantity()
-                                .uom("deg")))
+                        .definition(SWEHelper.getPropertyUri("LocationVector"))
+                        .addCoordinate("Latitude", factory.createLatitude())
+                        .addCoordinate("Longitude", factory.createLongitude())
+                )
                 .build();
     }
 
