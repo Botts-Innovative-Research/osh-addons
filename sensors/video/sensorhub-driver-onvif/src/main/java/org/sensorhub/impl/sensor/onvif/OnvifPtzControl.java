@@ -51,6 +51,7 @@ import static org.vast.swe.SWEHelper.getPropertyUri;
 public class OnvifPtzControl extends AbstractSensorControl<OnvifCameraDriver>
 {
 	private static int controlCount = 0;
+	private static final String AUX_COMMAND = "auxCommand";
 	private static final Logger log = LoggerFactory.getLogger(OnvifPtzControl.class);
     // define and set default values
     double minPan = -180.0;
@@ -277,6 +278,14 @@ public class OnvifPtzControl extends AbstractSensorControl<OnvifCameraDriver>
 			ptzPos.setUpdatable(true);
 			commandData.addItem(ptzPos.getName(), ptzPos);
 		}
+
+		// Add aux commands
+		var auxCommands = camera.getDevice().getServiceCapabilities().getMisc().getAuxiliaryCommands();
+
+		if (auxCommands != null && !auxCommands.isEmpty()) {
+			Category auxCommandCat = helper.createCategory().name("auxCommands").label("Auxiliary Commands").addAllowedValues(auxCommands).build();
+			commandData.addItem(auxCommandCat.getName(), auxCommandCat);
+		}
 	}
 
     @Override
@@ -471,6 +480,9 @@ public class OnvifPtzControl extends AbstractSensorControl<OnvifCameraDriver>
 				speedVec.setZoom(zoomSpeed);
 				// Note: Duration does not seem to work (at least on camera used for testing).
 				camera.getPtz().continuousMove(ptzProfile.getToken(), speedVec, DatatypeFactory.newInstance().newDuration(500));
+			} else if (itemID.equalsIgnoreCase("auxCommands")) {
+				String result = camera.getDevice().sendAuxiliaryCommand(data.getStringValue());
+				getLogger().info("Auxiliary command result: {}", result);
 			}
 	    }
 	    catch (Exception e)
