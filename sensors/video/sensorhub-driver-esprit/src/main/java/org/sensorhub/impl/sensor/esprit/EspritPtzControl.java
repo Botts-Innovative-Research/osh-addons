@@ -58,11 +58,11 @@ public class EspritPtzControl extends OnvifPtzControl
 
     private static final String PTZ_PRESETGOTO = "PTZ_PRESETGOTO";
 
-    protected EspritPtzControl(OnvifCameraDriver driver) {
+    protected EspritPtzControl(EspritCameraDriver driver) {
         super(driver);
     }
 
-    protected void init() {
+    public void init() {
         super.init();
         List<String> presets = new ArrayList<>();
         for (Presets preset : Presets.values()) {

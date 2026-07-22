@@ -164,7 +164,7 @@ public class OnvifPtzControl extends AbstractSensorControl<OnvifCameraDriver>
 		item.setConstraint(presetNames);
 	}
 
-    protected void init()
+    public void init()
     {
 		camera = parentSensor.camera;
 		ptz = camera.getPtz();

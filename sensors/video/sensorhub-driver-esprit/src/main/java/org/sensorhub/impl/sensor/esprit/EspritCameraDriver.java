@@ -63,7 +63,10 @@ public class EspritCameraDriver extends OnvifCameraDriver {
 
     protected void doInit() throws SensorHubException {
         super.doInit();
+        removeAllControlInputs();
         ptzControlInterface = new EspritPtzControl(this);
+        ptzControlInterface.init();
+        addControlInput(ptzControlInterface);
         hostUrl = "http://" + config.networkConfig.remoteHost + ":" + config.networkConfig.remotePort + HTTP_API_BASE;
     }
 }
