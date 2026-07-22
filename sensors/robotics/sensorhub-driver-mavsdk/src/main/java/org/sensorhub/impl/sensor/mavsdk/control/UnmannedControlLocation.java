@@ -137,6 +137,7 @@ public class UnmannedControlLocation extends AbstractSensorControl<UnmannedSyste
                 .description(SENSOR_CONTROL_DESCRIPTION)
                 .definition(SWEHelper.getPropertyUri("Control"))
                 .addField( "locationVectorLLA", factory.createVector()
+                        .definition(SWEHelper.getPropertyUri("LocationVector"))
                         .addCoordinate("Latitude", factory.createLatitude())
                         .addCoordinate("Longitude", factory.createLongitude())
                         .addCoordinate("AltitudeAGL", factory.createQuantity()
