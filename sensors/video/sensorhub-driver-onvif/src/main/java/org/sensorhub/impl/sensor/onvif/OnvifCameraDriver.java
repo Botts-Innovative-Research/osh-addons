@@ -50,24 +50,24 @@ public class OnvifCameraDriver extends AbstractSensorModule<OnvifCameraConfig>
 {
     private static final Logger log = LoggerFactory.getLogger(OnvifCameraDriver.class);
 
-    VideoOutput<OnvifCameraDriver> videoOutput;
-    AudioOutput<OnvifCameraDriver> audioOutput;
-    MpegTsProcessor mpegTsProcessor;
+    protected VideoOutput<OnvifCameraDriver> videoOutput;
+    protected AudioOutput<OnvifCameraDriver> audioOutput;
+    protected MpegTsProcessor mpegTsProcessor;
     protected ScheduledExecutorService executor;
-    OnvifPtzOutput ptzPosOutput;
-    OnvifPtzControl ptzControlInterface;
+    protected OnvifPtzOutput ptzPosOutput;
+    protected OnvifPtzControl ptzControlInterface;
 
-    OnvifDevice camera;
-    Profile ptzProfile;
-    Profile streamingProfile;
+    protected OnvifDevice camera;
+    protected Profile ptzProfile;
+    protected Profile streamingProfile;
 
-    String serialNumber;
-    String modelNumber;
-    String shortName;
-    String longName;
-    URI streamURI;
-    String visualConnectionString;
-    String streamTransport = "tcp";
+    protected String serialNumber;
+    protected String modelNumber;
+    protected String shortName;
+    protected String longName;
+    protected URI streamURI;
+    protected String visualConnectionString;
+    protected String streamTransport = "tcp";
 
     float panMax = 2f;
     float panMin = -1f;
@@ -180,7 +180,7 @@ public class OnvifCameraDriver extends AbstractSensorModule<OnvifCameraConfig>
         //return ((in + 1) / 2f * range) + min;
     }
 
-    OnvifCameraConfig config;
+    protected OnvifCameraConfig config;
 
     public OnvifCameraDriver() throws SensorHubException {
         super();
