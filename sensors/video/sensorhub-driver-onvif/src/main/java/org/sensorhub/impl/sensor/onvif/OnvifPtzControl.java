@@ -482,7 +482,7 @@ public class OnvifPtzControl extends AbstractSensorControl<OnvifCameraDriver>
 				camera.getPtz().continuousMove(ptzProfile.getToken(), speedVec, DatatypeFactory.newInstance().newDuration(500));
 			} else if (itemID.equalsIgnoreCase("auxCommands")) {
 				String result = camera.getDevice().sendAuxiliaryCommand(data.getStringValue());
-				getLogger().info("Auxiliary command result: {}", result);
+				getLogger().info("Auxiliary command result: {}"result);
 			}
 	    }
 	    catch (Exception e)

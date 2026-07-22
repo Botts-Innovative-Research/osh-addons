@@ -13,7 +13,7 @@ Developer are Copyright (C) 2014 the Initial Developer. All Rights Reserved.
  
 ******************************* END LICENSE BLOCK ***************************/
 
-package org.sensorhub.test.impl.sensor.axis;
+package org.sensorhub.test.impl.sensor.esprit;
 
 import java.util.UUID;
 import net.opengis.sensorml.v20.AbstractProcess;

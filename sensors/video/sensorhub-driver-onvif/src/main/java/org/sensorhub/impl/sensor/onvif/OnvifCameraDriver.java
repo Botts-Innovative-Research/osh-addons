@@ -274,7 +274,7 @@ public class OnvifCameraDriver extends AbstractSensorModule<OnvifCameraConfig>
         // Attempt camera connection
         String resolvePort = (config.networkConfig.remotePort == 0) ? "" : ":" + config.networkConfig.remotePort;
         String resolvePath = (config.networkConfig.onvifPath == null) ? "" : config.networkConfig.onvifPath;
-
+        OnvifDevice.setVerbose(true);
         try {
             camera = new OnvifDevice(config.networkConfig.remoteHost + resolvePort,
                     user, password, resolvePath);
