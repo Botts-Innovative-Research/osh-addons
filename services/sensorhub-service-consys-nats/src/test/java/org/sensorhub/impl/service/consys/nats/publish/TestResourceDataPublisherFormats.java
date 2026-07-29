@@ -54,9 +54,15 @@ public class TestResourceDataPublisherFormats
 
     private ResourceDataPublisher newPublisher(List<String> tokens, IObsSystemDatabase db)
     {
+        return newPublisher(tokens, db, null);
+    }
+
+
+    private ResourceDataPublisher newPublisher(List<String> tokens, IObsSystemDatabase db, List<String> relayGlobs)
+    {
         // collaborators aren't touched by format resolution
         return new ResourceDataPublisher(null, null, "api", null, db, null, null,
-            tokens, null, LoggerFactory.getLogger(TestResourceDataPublisherFormats.class));
+            tokens, null, relayGlobs, LoggerFactory.getLogger(TestResourceDataPublisherFormats.class));
     }
 
 
@@ -203,6 +209,59 @@ public class TestResourceDataPublisherFormats
         assertEquals(List.of("api.x.observations:data", "api.x.observations:data.swe-binary"),
             plans.get(0).subjects());
         assertEquals(def, plans.get(0).output());
+    }
+
+
+    @Test
+    public void emptyRelayPatternsRelayEveryStream()
+    {
+        var pub = newPublisher(List.of(), null, List.of());
+        assertTrue(pub.shouldRelayCommands(BigId.fromLong(1, 1)));
+    }
+
+
+    @Test
+    public void relayPatternsScopeRelayByParentSystemUid()
+    {
+        var pub = newPublisher(List.of(), mockSystemDb("urn:osh:sensor:counter:c1:mirror"),
+            List.of("*:mirror"));
+        assertTrue(pub.shouldRelayCommands(BigId.fromLong(1, 1)));
+
+        var pub2 = newPublisher(List.of(), mockSystemDb("urn:osh:sensor:counter:c1"),
+            List.of("*:mirror", "urn:osh:system:remote:*"));
+        assertFalse("non-matching UID must fall back to echo", pub2.shouldRelayCommands(BigId.fromLong(1, 1)));
+
+        var pub3 = newPublisher(List.of(), mockSystemDb("urn:osh:system:remote:drone42"),
+            List.of("*:mirror", "urn:osh:system:remote:*"));
+        assertTrue(pub3.shouldRelayCommands(BigId.fromLong(1, 1)));
+
+        // no '*' = exact literal match only
+        var pub4 = newPublisher(List.of(), mockSystemDb("urn:osh:sensor:counter:c1"),
+            List.of("urn:osh:sensor:counter:c1"));
+        assertTrue(pub4.shouldRelayCommands(BigId.fromLong(1, 1)));
+    }
+
+
+    @Test
+    public void unresolvableSystemUidFallsBackToEcho()
+    {
+        var pub = newPublisher(List.of(), mockSystemDb(null), List.of("*:mirror"));
+        assertFalse(pub.shouldRelayCommands(BigId.fromLong(1, 1)));
+    }
+
+
+    private IObsSystemDatabase mockSystemDb(String sysUid)
+    {
+        var store = mock(org.sensorhub.api.datastore.system.ISystemDescStore.class);
+        if (sysUid != null)
+        {
+            var sys = mock(org.sensorhub.api.system.ISystemWithDesc.class);
+            when(sys.getUniqueIdentifier()).thenReturn(sysUid);
+            when(store.getCurrentVersion(any(BigId.class))).thenReturn(sys);
+        }
+        var db = mock(IObsSystemDatabase.class);
+        when(db.getSystemDescStore()).thenReturn(store);
+        return db;
     }
 
 

@@ -147,12 +147,17 @@ public class ConSysApiNatsService extends AbstractModule<ConSysApiNatsServiceCon
 
                         resourceDataPublisher = new ResourceDataPublisher(
                             servlet, natsConnection, config.nodeId, eventBus, db, idEncoders,
-                            config.username, formatTokens, relayWriteDb, getLogger());
+                            config.username, formatTokens, relayWriteDb,
+                            config.commandRelayUidPatterns, getLogger());
                         resourceDataPublisher.start();
                         getLogger().info("CONSYS API NATS resource-data publisher started (PROACTIVE, formats={}{})",
                             config.proactiveDataFormats != null && !config.proactiveDataFormats.isEmpty()
                                 ? config.proactiveDataFormats : "server-default",
-                            relayWriteDb != null ? ", command relay ON" : "");
+                            relayWriteDb != null
+                                ? (config.commandRelayUidPatterns == null || config.commandRelayUidPatterns.isEmpty()
+                                    ? ", command relay ON (all streams)"
+                                    : ", command relay ON (UIDs " + config.commandRelayUidPatterns + ")")
+                                : "");
                     }
                     else
                     {
