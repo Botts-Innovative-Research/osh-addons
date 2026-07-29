@@ -148,6 +148,15 @@ public class ConSysApiNatsServiceConfig extends ServiceConfig
     public boolean commandRelayMode = false;
 
 
+    @DisplayInfo(label="Command Relay System UIDs", desc="Command relay mode only: glob patterns "
+        + "(e.g. '*:mirror', 'urn:osh:system:remote:*') matched against a control stream's parent "
+        + "system UID to decide PER STREAM whether to connect as the command receiver (relay) or "
+        + "use the observe-only echo. Empty = relay every control stream. Lets a dual-role node "
+        + "(local drivers + mirrored systems) relay only the mirrored streams while driver-backed "
+        + "streams keep their drivers as the receiver.")
+    public List<String> commandRelayUidPatterns = new ArrayList<>();
+
+
     @DisplayInfo(label="Proactive Data Formats", desc="Wire formats for proactively streamed "
         + "Resource Data. Each selected format is streamed simultaneously on its own "
         + "':data.<token>' subject, and the server-default format also feeds the bare ':data' "

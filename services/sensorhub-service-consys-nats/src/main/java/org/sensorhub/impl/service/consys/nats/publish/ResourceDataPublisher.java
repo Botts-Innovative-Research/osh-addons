@@ -16,12 +16,15 @@ package org.sensorhub.impl.service.consys.nats.publish;
 
 import java.net.URI;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Flow;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 import org.sensorhub.api.command.CommandEvent;
 import org.sensorhub.api.command.CommandStatusEvent;
 import org.sensorhub.api.command.CommandStreamAddedEvent;
@@ -148,6 +151,10 @@ public class ResourceDataPublisher
      *  stream and publish commands at submit time (see openCommandRelayStream).
      *  Must be the CS API's WRITE database — the receiver records each command. */
     final IObsSystemDatabase relayWriteDb;
+    /** Relay-mode scoping: relay only control streams whose parent system UID
+     *  matches one of these compiled glob patterns; empty = relay all (see
+     *  {@link #shouldRelayCommands}). Non-matching streams use the echo. */
+    final List<Pattern> relayUidPatterns;
     final Logger log;
 
     final List<Flow.Subscription> lifecycleSubscriptions = new ArrayList<>();
@@ -169,6 +176,7 @@ public class ResourceDataPublisher
         String defaultUser,
         List<String> dataFormatTokens,
         IObsSystemDatabase relayWriteDb,
+        List<String> relayUidGlobs,
         Logger log)
     {
         this.servlet = servlet;
@@ -179,6 +187,7 @@ public class ResourceDataPublisher
         this.idEncoders = idEncoders;
         this.defaultUser = defaultUser;
         this.relayWriteDb = relayWriteDb;
+        this.relayUidPatterns = compileGlobs(relayUidGlobs);
         this.log = log;
 
         var formats = new ArrayList<OutputFormat>();
@@ -200,6 +209,51 @@ public class ResourceDataPublisher
         if (formats.isEmpty())
             formats.add(new OutputFormat(null, null));
         this.outputFormats = List.copyOf(formats);
+    }
+
+
+    /**
+     * Compile relay-scope globs ({@code *} = any run of characters, everything
+     * else literal) to regex patterns. Null/blank entries are ignored.
+     * Package-private for tests.
+     */
+    static List<Pattern> compileGlobs(List<String> globs)
+    {
+        if (globs == null)
+            return List.of();
+        return globs.stream()
+            .filter(g -> g != null && !g.isBlank())
+            .map(g -> Pattern.compile(Arrays.stream(g.trim().split("\\*", -1))
+                .map(part -> part.isEmpty() ? "" : Pattern.quote(part))
+                .collect(Collectors.joining(".*"))))
+            .toList();
+    }
+
+
+    /**
+     * Relay-mode scope check for one control stream: relay only if the parent
+     * system's UID matches a configured glob (empty pattern list = relay all).
+     * A system whose UID can't be resolved is NOT relayed — the observe-only
+     * echo is always safe, while wrongly grabbing the receiver slot is not.
+     * Package-private for tests.
+     */
+    boolean shouldRelayCommands(BigId sysInternalId)
+    {
+        if (relayUidPatterns.isEmpty())
+            return true;
+        var sys = db.getSystemDescStore().getCurrentVersion(sysInternalId);
+        var uid = sys != null ? sys.getUniqueIdentifier() : null;
+        if (uid == null)
+        {
+            log.warn("Cannot resolve system UID for {} — using command echo, not relay", sysInternalId);
+            return false;
+        }
+        for (var p : relayUidPatterns)
+        {
+            if (p.matcher(uid).matches())
+                return true;
+        }
+        return false;
     }
 
 
@@ -463,10 +517,13 @@ public class ResourceDataPublisher
         //   the command DATA topic (osh-core counts data-topic subscribers as
         //   receiver occupancy, so an early observer blocks the driver's receiver
         //   connect on restart) is safe there. See openCommandEchoStream + javadoc.
+        // Relay mode is scoped per stream by the parent system's UID (relayUidPatterns),
+        // so a dual-role node can relay mirrored streams while its own driver-backed
+        // streams keep the echo (and their drivers keep the receiver slot).
         var cmdSubjects = List.of(
             baseSubject + ".commands" + dataSuffix,
             baseSubject + ".commands" + jsonSuffix);
-        var cmdHandler = relayWriteDb != null
+        var cmdHandler = relayWriteDb != null && shouldRelayCommands(sysInternalId)
             ? openCommandRelayStream(basePath + "/commands", cmdSubjects, csInternalId)
             : openCommandEchoStream(basePath + "/commands", cmdSubjects, csInternalId);
         if (cmdHandler != null)
