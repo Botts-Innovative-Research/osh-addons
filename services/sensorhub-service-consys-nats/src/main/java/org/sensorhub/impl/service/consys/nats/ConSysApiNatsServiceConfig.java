@@ -139,7 +139,7 @@ public class ConSysApiNatsServiceConfig extends ServiceConfig
 
     @DisplayInfo(label="Command Relay Mode", desc="Hub/mirror nodes only: connect as the command "
         + "RECEIVER on every control stream and publish each submitted command to its "
-        + "':commands:data.json' subject immediately, so an external relay (e.g. the OSHConnect "
+        + "':commands:data' / ':commands:data.json' subjects immediately, so an external relay (e.g. the OSHConnect "
         + "broker) can forward it to the source node. This also makes commands get recorded in the "
         + "write database and auto-acknowledged PENDING. MUST stay false on nodes with local "
         + "drivers: only one command receiver may connect per stream, so this would fight the "
@@ -150,10 +150,12 @@ public class ConSysApiNatsServiceConfig extends ServiceConfig
 
     @DisplayInfo(label="Proactive Data Formats", desc="Wire formats for proactively streamed "
         + "Resource Data. Each selected format is streamed simultaneously on its own "
-        + "':data.<token>' subject. Empty list = server default, resolved per datastream to a "
-        + "concrete token (':data.swe-binary' for binary-encoded streams, ':data.json' otherwise) — "
-        + "nothing is ever published on a bare ':data' subject. Formats must be served by the CS "
-        + "API for the datastream "
+        + "':data.<token>' subject, and the server-default format also feeds the bare ':data' "
+        + "parent subject (as an extra default-format stream if the default is not in this list). "
+        + "Empty list = server default only, resolved per datastream to a concrete token "
+        + "('swe-binary' for binary-encoded streams, 'json' otherwise) and published on both "
+        + "':data' and its resolved leaf. All messages carry a Content-Type header. Formats must "
+        + "be served by the CS API for the datastream "
         + "(SWE_PROTO/SWE_FLATBUFFERS require their codec modules + custom-format registration).")
     public List<ProactiveFormat> proactiveDataFormats = new ArrayList<>();
 
