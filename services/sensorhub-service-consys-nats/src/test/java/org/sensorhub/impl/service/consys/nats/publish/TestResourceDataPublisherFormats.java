@@ -16,19 +16,28 @@ package org.sensorhub.impl.service.consys.nats.publish;
 
 import static org.junit.Assert.*;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import java.io.IOException;
 import java.util.Arrays;
 import java.util.List;
 import org.junit.Test;
 import org.sensorhub.api.common.BigId;
+import org.sensorhub.api.common.IdEncoder;
+import org.sensorhub.api.common.IdEncoders;
 import org.sensorhub.api.data.IDataStreamInfo;
 import org.sensorhub.api.database.IObsSystemDatabase;
 import org.sensorhub.api.datastore.obs.IDataStreamStore;
+import org.sensorhub.impl.service.consys.ConSysApiServlet;
+import org.sensorhub.impl.service.consys.RestApiSecurity;
 import org.sensorhub.impl.service.consys.nats.ConSysApiNatsServiceConfig;
 import org.sensorhub.impl.service.consys.nats.subject.ConSysSubjectValidator;
+import org.sensorhub.impl.service.consys.resource.IResourceHandler;
+import org.sensorhub.impl.service.consys.resource.RequestContext;
 import org.sensorhub.impl.service.consys.resource.ResourceFormat;
 import org.slf4j.LoggerFactory;
+import io.nats.client.Connection;
 import net.opengis.swe.v20.BinaryEncoding;
 import net.opengis.swe.v20.DataEncoding;
 import net.opengis.swe.v20.TextEncoding;
@@ -274,5 +283,69 @@ public class TestResourceDataPublisherFormats
             assertNotNull("enum token '" + f.token + "' missing from FORMAT_SUBTOPICS",
                 ConSysSubjectValidator.FORMAT_SUBTOPICS.get(f.token));
         }
+    }
+
+
+    /*
+     * A datastream that cannot be served in one of the configured proactive
+     * formats (the streaming GET fails for that format) must still be published
+     * in the formats it does support — and not at all if it supports none.
+     */
+
+    private ResourceDataPublisher newStreamingPublisher(ConSysApiServlet servlet, List<String> tokens)
+    {
+        var idEncoders = mock(IdEncoders.class);
+        var sysEnc = mock(IdEncoder.class);
+        var dsEnc = mock(IdEncoder.class);
+        when(sysEnc.encodeID(any(BigId.class))).thenReturn("sys1");
+        when(dsEnc.encodeID(any(BigId.class))).thenReturn("ds1");
+        when(idEncoders.getSystemIdEncoder()).thenReturn(sysEnc);
+        when(idEncoders.getDataStreamIdEncoder()).thenReturn(dsEnc);
+
+        return new ResourceDataPublisher(servlet, mock(Connection.class), "api", null,
+            mockDb(mock(TextEncoding.class)), idEncoders, null,
+            tokens, null, null, LoggerFactory.getLogger(TestResourceDataPublisherFormats.class));
+    }
+
+
+    private ConSysApiServlet mockServlet(ResourceFormat failingFormat) throws Exception
+    {
+        var servlet = mock(ConSysApiServlet.class);
+        var rootHandler = mock(IResourceHandler.class);
+        when(servlet.getRootHandler()).thenReturn(rootHandler);
+        when(servlet.getSecurityHandler()).thenReturn(mock(RestApiSecurity.class));
+        doAnswer(inv -> {
+            RequestContext ctx = inv.getArgument(0);
+            if (failingFormat == null || failingFormat.equals(ctx.getFormat()))
+                throw new IOException("datastream cannot be represented in " + ctx.getFormat());
+            return null;
+        }).when(rootHandler).doGet(any(RequestContext.class));
+        return servlet;
+    }
+
+
+    @Test
+    public void unsupportedFormatIsSkippedOtherFormatsStillPublished() throws Exception
+    {
+        var servlet = mockServlet(ResourceFormat.SWE_JSON); // swe-json GETs fail, json GETs succeed
+        var pub = newStreamingPublisher(servlet, List.of("json", "swe-json"));
+
+        pub.startStream(BigId.fromLong(1, 2), BigId.fromLong(1, 3));
+
+        var handlers = pub.streams.get(BigId.fromLong(1, 2));
+        assertNotNull("datastream must still be published in the supported format", handlers);
+        assertEquals("only the json stream should be open", 1, handlers.size());
+    }
+
+
+    @Test
+    public void datastreamSupportingNoConfiguredFormatIsNotPublished() throws Exception
+    {
+        var servlet = mockServlet(null); // every GET fails
+        var pub = newStreamingPublisher(servlet, List.of("json", "swe-json"));
+
+        pub.startStream(BigId.fromLong(1, 2), BigId.fromLong(1, 3));
+
+        assertTrue("no stream must be registered", pub.streams.isEmpty());
     }
 }

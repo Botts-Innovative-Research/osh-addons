@@ -391,7 +391,8 @@ public class ResourceDataPublisher
     }
 
 
-    private void startStream(BigId dsInternalId, BigId sysInternalId)
+    /** Package-private for tests. */
+    void startStream(BigId dsInternalId, BigId sysInternalId)
     {
         if (streams.containsKey(dsInternalId))
             return;
@@ -415,7 +416,10 @@ public class ResourceDataPublisher
         }
 
         if (handlers.isEmpty())
+        {
+            log.warn("No proactive data stream could be opened for datastream {} — not published on NATS", baseSubject);
             return;
+        }
 
         // Atomic register; if a duplicate raced ahead, close ours
         if (streams.putIfAbsent(dsInternalId, handlers) != null)
@@ -769,9 +773,10 @@ public class ResourceDataPublisher
      */
     private NatsStreamHandler openStream(String resourcePath, List<String> dataSubjects, ResourceFormat format)
     {
+        NatsStreamHandler handler = null;
         try
         {
-            var handler = new NatsStreamHandler(nats, dataSubjects,
+            handler = new NatsStreamHandler(nats, dataSubjects,
                 format != null ? format.getMimeType() : null);
             var ctx = new RequestContext(servlet, new URI(resourcePath), handler);
             if (format != null)
@@ -783,7 +788,13 @@ public class ResourceDataPublisher
         }
         catch (Exception e)
         {
-            log.error("Failed to start proactive data stream {} for resource {}", dataSubjects, resourcePath, e);
+            // the resource cannot be served in this format (or the stream failed
+            // to open): skip just this stream — the resource's other formats keep
+            // publishing. close() cancels any partially-established subscription.
+            if (handler != null)
+                handler.close();
+            log.warn("Resource {} cannot be streamed in format {} — skipping subject(s) {}",
+                resourcePath, format != null ? format : "(server default)", dataSubjects, e);
             return null;
         }
         finally
