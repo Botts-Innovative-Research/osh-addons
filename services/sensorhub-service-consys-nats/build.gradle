@@ -23,6 +23,17 @@ test {
   useJUnit()
 }
 
+// bundle the module readme so the admin UI can display it
+tasks.register('copyReadme', Copy) {
+    from "${projectDir}/README.md"
+    into "${projectDir}/src/main/resources/org/sensorhub/impl/service/consys/nats"
+    onlyIf { file("${projectDir}/README.md").exists() }
+}
+
+processResources {
+    dependsOn copyReadme
+}
+
 // add info to OSGI manifest
 osgi {
   manifest {
