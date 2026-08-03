@@ -82,6 +82,52 @@ public class TestNatsOutputStream
 
 
     @Test
+    public void originNodeHeaderAddedWhenSet() throws Exception
+    {
+        var os = new NatsOutputStream(nats, java.util.List.of(SUBJECT), null, "uuid-X", 64, false);
+        os.write("x".getBytes(StandardCharsets.UTF_8));
+        os.send();
+
+        var captor = ArgumentCaptor.forClass(Message.class);
+        verify(nats).publish(captor.capture());
+        assertEquals("uuid-X", captor.getValue().getHeaders().getFirst(NatsOutputStream.ORIGIN_NODE_HEADER));
+    }
+
+
+    @Test
+    public void noOriginNodeHeaderWhenNull() throws Exception
+    {
+        var os = new NatsOutputStream(nats, SUBJECT, 64, false);
+        os.write("x".getBytes(StandardCharsets.UTF_8));
+        os.send();
+
+        var captor = ArgumentCaptor.forClass(Message.class);
+        verify(nats).publish(captor.capture());
+        assertNull(captor.getValue().getHeaders().getFirst(NatsOutputStream.ORIGIN_NODE_HEADER));
+    }
+
+
+    @Test
+    public void egressFilterSuppressesPublishAndResetsBuffer() throws Exception
+    {
+        var os = new NatsOutputStream(nats, SUBJECT, 64, false);
+        os.setEgressFilter(payload -> false); // suppress everything
+        os.write("held".getBytes(StandardCharsets.UTF_8));
+        os.send();
+        verify(nats, never()).publish(any(Message.class));
+
+        // buffer was reset by the suppressed send; a passing message flows
+        os.setEgressFilter(payload -> true);
+        os.write("pass".getBytes(StandardCharsets.UTF_8));
+        os.send();
+
+        var captor = ArgumentCaptor.forClass(Message.class);
+        verify(nats).publish(captor.capture());
+        assertArrayEquals("pass".getBytes(StandardCharsets.UTF_8), captor.getValue().getData());
+    }
+
+
+    @Test
     public void flushOnlySendsWhenAutoSendEnabled() throws Exception
     {
         var buffered = new NatsOutputStream(nats, SUBJECT, 64, false);

@@ -45,6 +45,7 @@ import org.sensorhub.api.event.EventUtils;
 import org.sensorhub.api.event.IEventBus;
 import org.sensorhub.impl.system.SystemDatabaseTransactionHandler;
 import org.sensorhub.impl.service.consys.ConSysApiServlet;
+import org.sensorhub.impl.service.consys.nats.ingest.ObsFingerprint;
 import org.sensorhub.impl.service.consys.task.CommandBindingJson;
 import org.sensorhub.impl.service.consys.task.CommandHandler;
 import org.sensorhub.impl.service.consys.nats.subject.ConSysSubjectValidator;
@@ -155,9 +156,17 @@ public class ResourceDataPublisher
      *  matches one of these compiled glob patterns; empty = relay all (see
      *  {@link #shouldRelayCommands}). Non-matching streams use the echo. */
     final List<Pattern> relayUidPatterns;
+    /** Systems whose UID matches one of these globs get NO proactive
+     *  observation data streams (manual companion to the automatic
+     *  {@link IngestOriginRegistry} suppression). */
+    final List<Pattern> obsExcludePatterns;
+    /** This node's identity UUID for CS-Origin-Node provenance; may be null. */
+    final String originNode;
     final Logger log;
 
     final List<Flow.Subscription> lifecycleSubscriptions = new ArrayList<>();
+
+    AutoCloseable registryListener;
 
     /** Active proactive data streams (one per output format) keyed by datastream internal ID. */
     final Map<BigId, List<NatsStreamHandler>> streams = new ConcurrentHashMap<>();
@@ -177,6 +186,8 @@ public class ResourceDataPublisher
         List<String> dataFormatTokens,
         IObsSystemDatabase relayWriteDb,
         List<String> relayUidGlobs,
+        List<String> obsExcludeUidGlobs,
+        String originNode,
         Logger log)
     {
         this.servlet = servlet;
@@ -188,6 +199,8 @@ public class ResourceDataPublisher
         this.defaultUser = defaultUser;
         this.relayWriteDb = relayWriteDb;
         this.relayUidPatterns = compileGlobs(relayUidGlobs);
+        this.obsExcludePatterns = compileGlobs(obsExcludeUidGlobs);
+        this.originNode = originNode;
         this.log = log;
 
         var formats = new ArrayList<OutputFormat>();
@@ -257,11 +270,73 @@ public class ResourceDataPublisher
     }
 
 
+    /**
+     * True = open NO observation data streams for this system: its UID matches
+     * {@code proactiveDataUidExcludePatterns}, or the {@link IngestOriginRegistry}
+     * marks it as ingested from another node. Command/status streams and
+     * CloudEvents notifications are never affected. An unresolvable UID fails
+     * OPEN (publish) — deliberately the opposite of {@link #shouldRelayCommands}:
+     * a native system must never go silent by accident, while the worst case
+     * here is a transient duplicate that ingest-side fingerprinting absorbs.
+     * Package-private for tests.
+     */
+    boolean isObsPublishSuppressed(BigId sysInternalId)
+    {
+        if (obsExcludePatterns.isEmpty() && !IngestOriginRegistry.hasEntries())
+            return false;
+
+        var sys = db.getSystemDescStore().getCurrentVersion(sysInternalId);
+        var uid = sys != null ? sys.getUniqueIdentifier() : null;
+        if (uid == null)
+            return false; // fail open
+
+        if (IngestOriginRegistry.isForeign(uid))
+            return true;
+        for (var p : obsExcludePatterns)
+        {
+            if (p.matcher(uid).matches())
+                return true;
+        }
+        return false;
+    }
+
+
+    /**
+     * Late foreign-mark handling: client discovery may record a mirrored system
+     * AFTER the startup scan already opened its streams (both run async on a
+     * restart with persisted mirrors) — close them now. Package-private for tests.
+     */
+    void onSystemMarkedForeign(String uid)
+    {
+        try
+        {
+            db.getDataStreamStore()
+                .selectEntries(new DataStreamFilter.Builder()
+                    .withSystems().withUniqueIDs(uid).done()
+                    .build())
+                .forEach(e -> {
+                    if (streams.containsKey(e.getKey().getInternalID()))
+                    {
+                        log.info("System {} marked as ingested from another node — closing its proactive obs streams", uid);
+                        stopStream(e.getKey().getInternalID());
+                    }
+                });
+        }
+        catch (Exception e)
+        {
+            log.error("Error closing proactive obs streams for foreign system {}", uid, e);
+        }
+    }
+
+
     public void start()
     {
         // React to datastream/commandstream lifecycle so streams track add/remove
         subscribeToDataStreamLifecycle();
         subscribeToCommandStreamLifecycle();
+
+        // React to systems being marked as foreign after our startup scan
+        registryListener = IngestOriginRegistry.addListener(this::onSystemMarkedForeign);
 
         // Open streams for datastreams that already exist
         db.getDataStreamStore()
@@ -287,6 +362,13 @@ public class ResourceDataPublisher
 
     public void stop()
     {
+        if (registryListener != null)
+        {
+            try { registryListener.close(); }
+            catch (Exception e) { /* removing a listener cannot fail meaningfully */ }
+            registryListener = null;
+        }
+
         for (var sub : lifecycleSubscriptions)
             sub.cancel();
         lifecycleSubscriptions.clear();
@@ -397,6 +479,14 @@ public class ResourceDataPublisher
         if (streams.containsKey(dsInternalId))
             return;
 
+        // no obs data streams for systems this node did not originate
+        if (isObsPublishSuppressed(sysInternalId))
+        {
+            log.info("Skipping proactive obs streams for datastream {} — parent system is "
+                + "ingested/excluded (ingest-terminal publishing)", dsInternalId);
+            return;
+        }
+
         var sysId = idEncoders.getSystemIdEncoder().encodeID(sysInternalId);
         var dsId  = idEncoders.getDataStreamIdEncoder().encodeID(dsInternalId);
         var resourcePath = "/systems/" + sysId + "/datastreams/" + dsId + "/observations";
@@ -412,7 +502,10 @@ public class ResourceDataPublisher
         {
             var handler = openStream(resourcePath, plan.subjects(), plan.output().format());
             if (handler != null)
+            {
+                attachEgressFilter(handler, dsInternalId, plan.output().token());
                 handlers.add(handler);
+            }
         }
 
         if (handlers.isEmpty())
@@ -429,6 +522,42 @@ public class ResourceDataPublisher
         }
         else
             log.debug("Started {} proactive NATS data stream(s) on {}", handlers.size(), baseSubject);
+    }
+
+
+    /**
+     * Per-message no-republish check: an observation whose fingerprint sits in
+     * the recent-ingest memory was received from the broker and must not be
+     * republished — the filter drops it just before the NATS publish. Applies
+     * to json-family formats only (binary formats carry no cheaply-extractable
+     * time); known-mirror streams are already fully suppressed by
+     * {@link #isObsPublishSuppressed}, which remains the CPU-saving layer.
+     */
+    private void attachEgressFilter(NatsStreamHandler handler, BigId dsInternalId, String fmtToken)
+    {
+        String timeField = null;
+        if ("swe-json".equals(fmtToken))
+        {
+            var dsInfo = db.getDataStreamStore().get(new DataStreamKey(dsInternalId));
+            timeField = dsInfo != null ? ObsFingerprint.findTimeFieldName(dsInfo.getRecordStructure()) : null;
+            if (timeField == null)
+                return; // record has no top-level time field: not extractable
+        }
+        else if (!"json".equals(fmtToken) && !"om-json".equals(fmtToken))
+        {
+            return; // binary/unknown: not extractable
+        }
+
+        final var ff = fmtToken;
+        final var tf = timeField;
+        handler.setEgressFilter(payload -> {
+            var timeMs = ObsFingerprint.extractPhenTimeMs(payload, ff, tf);
+            if (timeMs == null || !ObsFingerprint.wasRecentlyIngested(dsInternalId, timeMs))
+                return true;
+            log.debug("Suppressing republication of ingested observation (datastream {}, t={})",
+                dsInternalId, timeMs);
+            return false;
+        });
     }
 
 
@@ -492,7 +621,8 @@ public class ResourceDataPublisher
     }
 
 
-    private void startCommandStreams(BigId csInternalId, BigId sysInternalId)
+    /** Package-private for tests. */
+    void startCommandStreams(BigId csInternalId, BigId sysInternalId)
     {
         if (cmdStreams.containsKey(csInternalId))
             return;
@@ -590,7 +720,7 @@ public class ResourceDataPublisher
                 return null;
             }
 
-            var natsHandler = new NatsStreamHandler(nats, dataSubjects, ResourceFormat.JSON.getMimeType());
+            var natsHandler = new NatsStreamHandler(nats, dataSubjects, ResourceFormat.JSON.getMimeType(), originNode);
             handler = natsHandler;
             var ctx = new RequestContext(servlet, new URI(resourcePath), natsHandler);
             ctx.setData(new CommandHandler.CommandHandlerContextData());
@@ -690,7 +820,7 @@ public class ResourceDataPublisher
                 return null;
             }
 
-            var handler = new NatsStreamHandler(nats, dataSubjects, ResourceFormat.JSON.getMimeType());
+            var handler = new NatsStreamHandler(nats, dataSubjects, ResourceFormat.JSON.getMimeType(), originNode);
             var ctx = new RequestContext(servlet, new URI(resourcePath), handler);
             // empty context data => the binding creates params writers lazily, keyed
             // by each command's stream id (see CommandBindingJson.serialize)
@@ -777,7 +907,7 @@ public class ResourceDataPublisher
         try
         {
             handler = new NatsStreamHandler(nats, dataSubjects,
-                format != null ? format.getMimeType() : null);
+                format != null ? format.getMimeType() : null, originNode);
             var ctx = new RequestContext(servlet, new URI(resourcePath), handler);
             if (format != null)
                 ctx.setResponseFormat(format);

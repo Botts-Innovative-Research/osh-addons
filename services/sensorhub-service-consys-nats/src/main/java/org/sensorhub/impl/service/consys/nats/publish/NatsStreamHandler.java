@@ -67,8 +67,26 @@ public class NatsStreamHandler implements StreamHandler
      */
     public NatsStreamHandler(Connection nats, List<String> dataSubjects, String contentType)
     {
+        this(nats, dataSubjects, contentType, null);
+    }
+
+
+    /**
+     * Full constructor. {@code originNode} (may be null) is this node's identity
+     * UUID, attached to every published message as
+     * {@link NatsOutputStream#ORIGIN_NODE_HEADER} provenance.
+     */
+    public NatsStreamHandler(Connection nats, List<String> dataSubjects, String contentType, String originNode)
+    {
         this.dataSubjects = List.copyOf(Asserts.checkNotNullOrEmpty(dataSubjects, "dataSubjects"));
-        this.os = new NatsOutputStream(nats, this.dataSubjects, contentType, 1024, false);
+        this.os = new NatsOutputStream(nats, this.dataSubjects, contentType, originNode, 1024, false);
+    }
+
+
+    /** Set a per-message egress filter (see {@link NatsOutputStream#setEgressFilter}). */
+    public void setEgressFilter(java.util.function.Predicate<byte[]> filter)
+    {
+        os.setEgressFilter(filter);
     }
 
 

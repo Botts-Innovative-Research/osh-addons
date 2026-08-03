@@ -60,6 +60,11 @@ public class NatsOutputStream extends ByteArrayOutputStream
     public static final String ORIGIN_HEADER = "CS-Origin";
     /** {@link #ORIGIN_HEADER} value marking a server-originated (OSH-published) message. */
     public static final String ORIGIN_SERVER = "server";
+    /** Header carrying the publishing node's identity UUID: lets any node drop
+     *  its own data arriving back via a third party, and lets bridges preserve
+     *  origin. Distinct from {@link #ORIGIN_HEADER}, whose exact-match
+     *  semantics must not change. */
+    public static final String ORIGIN_NODE_HEADER = "CS-Origin-Node";
     /** Header carrying a Connected Systems correlation id (e.g. command id). */
     public static final String CORREL_ID_HEADER = "CS-Correlation-Id";
     /** Header carrying the MIME type of the message payload. */
@@ -70,23 +75,47 @@ public class NatsOutputStream extends ByteArrayOutputStream
     protected Connection connection;
     protected List<String> subjects;
     protected String contentType;
+    protected String originNode;
     protected boolean autoSendOnFlush;
     protected boolean warnedOversize;
+    /** Optional egress filter: called with each serialized payload before
+     *  publishing; false = silently skip this message (buffer is still reset).
+     *  Used to suppress republication of ingested observations. */
+    protected java.util.function.Predicate<byte[]> egressFilter;
+
+
+    /** Set the egress filter (see {@link #egressFilter}). */
+    public void setEgressFilter(java.util.function.Predicate<byte[]> filter)
+    {
+        this.egressFilter = filter;
+    }
 
 
     public NatsOutputStream(Connection connection, String subject, int bufferSize, boolean autoSendOnFlush)
     {
-        this(connection, List.of(Asserts.checkNotNull(subject, "subject")), null, bufferSize, autoSendOnFlush);
+        this(connection, List.of(Asserts.checkNotNull(subject, "subject")), null, null, bufferSize, autoSendOnFlush);
     }
 
 
     public NatsOutputStream(Connection connection, List<String> subjects, String contentType,
         int bufferSize, boolean autoSendOnFlush)
     {
+        this(connection, subjects, contentType, null, bufferSize, autoSendOnFlush);
+    }
+
+
+    /**
+     * Full constructor. {@code originNode} (may be null) is this node's identity
+     * UUID, attached to every message as {@link #ORIGIN_NODE_HEADER}.
+     */
+    public NatsOutputStream(Connection connection, List<String> subjects, String contentType,
+        String originNode, int bufferSize, boolean autoSendOnFlush)
+    {
         super(bufferSize);
         this.connection = Asserts.checkNotNull(connection, Connection.class);
         this.subjects = List.copyOf(Asserts.checkNotNullOrEmpty(subjects, "subjects"));
         this.contentType = contentType;
+        this.originNode = originNode;
         this.autoSendOnFlush = autoSendOnFlush;
     }
 
@@ -137,13 +166,23 @@ public class NatsOutputStream extends ByteArrayOutputStream
             return;
         }
 
+        var data = toByteArray();
+
+        // a message failing the egress filter was received from the broker
+        // and must not go back out
+        if (egressFilter != null && !egressFilter.test(data))
+        {
+            this.reset();
+            return;
+        }
+
         var headers = new Headers().add(ORIGIN_HEADER, ORIGIN_SERVER);
         if (contentType != null)
             headers.add(CONTENT_TYPE_HEADER, contentType);
+        if (originNode != null)
+            headers.add(ORIGIN_NODE_HEADER, originNode);
         if (correlId != 0)
             headers.add(CORREL_ID_HEADER, Long.toString(correlId));
-
-        var data = toByteArray();
         for (var subject : subjects)
         {
             connection.publish(NatsMessage.builder()

@@ -157,6 +157,24 @@ public class ConSysApiNatsServiceConfig extends ServiceConfig
     public List<String> commandRelayUidPatterns = new ArrayList<>();
 
 
+    @DisplayInfo(label="Origin Node UUID", desc="Fallback node identity for the CS-Origin-Node "
+        + "provenance header when the nodehealth identity file (<moduleDataPath>/node-uuid) is "
+        + "absent. Normally leave blank — the persisted identity file wins. With neither, the "
+        + "header is omitted (one WARN) and provenance-based self-drop is disabled.")
+    public String originNodeUuid;
+
+
+    @DisplayInfo(label="Proactive Data Exclude System UIDs", desc="PROACTIVE mode: glob patterns "
+        + "(e.g. '*:mirror', 'urn:osh:system:remote:*') matched against a datastream's parent "
+        + "system UID. Matching systems get NO proactive observation data streams "
+        + "(ingest-terminal publishing for mirrored/ingested systems — one copy per broker, "
+        + "never republish what this node did not originate). Command/status streams and "
+        + "resource event notifications are NOT affected. Systems mirrored by the NATS client "
+        + "module are excluded automatically (origin registry); these globs cover mirrors "
+        + "created by third-party relays.")
+    public List<String> proactiveDataUidExcludePatterns = new ArrayList<>();
+
+
     @DisplayInfo(label="Proactive Data Formats", desc="Wire formats for proactively streamed "
         + "Resource Data. Each selected format is streamed simultaneously on its own "
         + "':data.<token>' subject, and the server-default format also feeds the bare ':data' "

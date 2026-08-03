@@ -104,11 +104,14 @@ public class ConSysApiNatsService extends AbstractModule<ConSysApiNatsServiceCon
                     var idEncoders   = getParentHub().getIdEncoders();
                     var db           = getParentHub().getDatabaseRegistry().getFederatedDatabase();
                     var csApiBaseUrl = service.getPublicEndpointUrl();
+                    var originNode   = resolveOriginNodeUuid();
 
-                    // Inbound handler: ingest + (ON_DEMAND) flow-control control channel
+                    // Inbound handler: ingest + (ON_DEMAND) flow-control control channel;
+                    // db + idEncoders enable fingerprint-idempotent obs ingest
                     connector = new ConSysApiNatsConnector(
                         servlet, natsConnection, config.nodeId, config.username,
-                        config.dataStreamingMode, config.onDemandLeaseSeconds);
+                        config.dataStreamingMode, config.onDemandLeaseSeconds,
+                        db, idEncoders, originNode);
                     connector.start();
 
                     // Proactive CloudEvents Resource Event publisher (always on)
@@ -148,16 +151,20 @@ public class ConSysApiNatsService extends AbstractModule<ConSysApiNatsServiceCon
                         resourceDataPublisher = new ResourceDataPublisher(
                             servlet, natsConnection, config.nodeId, eventBus, db, idEncoders,
                             config.username, formatTokens, relayWriteDb,
-                            config.commandRelayUidPatterns, getLogger());
+                            config.commandRelayUidPatterns,
+                            config.proactiveDataUidExcludePatterns, originNode, getLogger());
                         resourceDataPublisher.start();
                         getLogger().info("CONSYS API NATS resource-data publisher started (PROACTIVE, formats={}{})",
                             config.proactiveDataFormats != null && !config.proactiveDataFormats.isEmpty()
                                 ? config.proactiveDataFormats : "server-default",
-                            relayWriteDb != null
+                            (relayWriteDb != null
                                 ? (config.commandRelayUidPatterns == null || config.commandRelayUidPatterns.isEmpty()
                                     ? ", command relay ON (all streams)"
                                     : ", command relay ON (UIDs " + config.commandRelayUidPatterns + ")")
-                                : "");
+                                : "")
+                            + (config.proactiveDataUidExcludePatterns != null && !config.proactiveDataUidExcludePatterns.isEmpty()
+                                ? ", obs publish excluded for UIDs " + config.proactiveDataUidExcludePatterns
+                                : ""));
                     }
                     else
                     {
@@ -225,6 +232,52 @@ public class ConSysApiNatsService extends AbstractModule<ConSysApiNatsServiceCon
      * (e.g. on {@code _control.get}). Control traffic is also meaningless to
      * replay.</p>
      */
+    /**
+     * Resolve this node's identity UUID for the {@code CS-Origin-Node} header:
+     * the nodehealth driver's persisted identity file wins, else the
+     * {@code originNodeUuid} config fallback, else null (header omitted, one
+     * WARN). Read-only — creating/persisting the identity is the nodehealth
+     * driver's job (it is the singleton identity owner).
+     */
+    protected String resolveOriginNodeUuid()
+    {
+        try
+        {
+            var hubConfig = getParentHub().getConfig();
+            var dataPath = hubConfig != null ? hubConfig.getModuleDataPath() : null;
+            if (dataPath != null && !dataPath.isBlank())
+            {
+                var file = new java.io.File(dataPath, "node-uuid");
+                if (file.isFile())
+                {
+                    var uuid = java.nio.file.Files.readString(file.toPath()).trim();
+                    return java.util.UUID.fromString(uuid).toString();
+                }
+            }
+        }
+        catch (Exception e)
+        {
+            getLogger().warn("Cannot read node identity file: {}", e.getMessage());
+        }
+
+        if (config.originNodeUuid != null && !config.originNodeUuid.isBlank())
+        {
+            try
+            {
+                return java.util.UUID.fromString(config.originNodeUuid.trim()).toString();
+            }
+            catch (IllegalArgumentException e)
+            {
+                getLogger().warn("Invalid originNodeUuid '{}' — ignoring", config.originNodeUuid);
+            }
+        }
+
+        getLogger().warn("No node identity — CS-Origin-Node header omitted and provenance-based "
+            + "self-drop disabled (load the nodehealth driver or set originNodeUuid)");
+        return null;
+    }
+
+
     protected void ensureJetStreamStream()
     {
         var js = config.jetStream;
