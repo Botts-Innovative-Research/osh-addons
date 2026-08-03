@@ -18,10 +18,19 @@ import static org.junit.Assert.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 import java.nio.charset.StandardCharsets;
+import java.util.stream.Stream;
 import org.junit.Before;
 import org.junit.Test;
 import org.mockito.ArgumentCaptor;
+import org.sensorhub.api.common.BigId;
+import org.sensorhub.api.common.IdEncoder;
+import org.sensorhub.api.common.IdEncoders;
+import org.sensorhub.api.data.IObsData;
+import org.sensorhub.api.database.IObsSystemDatabase;
+import org.sensorhub.api.datastore.obs.IObsStore;
+import org.sensorhub.api.datastore.obs.ObsFilter;
 import org.sensorhub.impl.service.consys.ConSysApiServlet;
+import org.sensorhub.impl.service.consys.nats.ingest.ObsFingerprint;
 import org.sensorhub.impl.service.consys.InvalidRequestException;
 import org.sensorhub.impl.service.consys.InvalidRequestException.ErrorCode;
 import org.sensorhub.impl.service.consys.RestApiSecurity;
@@ -59,6 +68,7 @@ public class TestConSysApiNatsConnector
     @Before
     public void setup()
     {
+        ObsFingerprint.clearRecentIngestsForTests(); // JVM-shared memory
         servlet = mock(ConSysApiServlet.class);
         root = mock(IResourceHandler.class);
         var security = mock(RestApiSecurity.class);
@@ -75,6 +85,29 @@ public class TestConSysApiNatsConnector
     {
         return new ConSysApiNatsConnector(servlet, nats, NODE_ID, null, mode, leaseSeconds);
     }
+
+
+    /** Connector with fingerprint dedupe enabled: mocked db whose obs store
+     *  reports a duplicate iff {@code duplicate}, and id encoders decoding any
+     *  ds id token to a fixed internal id. */
+    ConSysApiNatsConnector newDedupeConnector(boolean duplicate)
+    {
+        obsStore = mock(IObsStore.class);
+        when(obsStore.select(any(ObsFilter.class))).thenAnswer(inv ->
+            duplicate ? Stream.of(mock(IObsData.class)) : Stream.empty());
+        var db = mock(IObsSystemDatabase.class);
+        when(db.getObservationStore()).thenReturn(obsStore);
+
+        var dsEncoder = mock(IdEncoder.class);
+        when(dsEncoder.decodeID(anyString())).thenReturn(BigId.fromLong(1, 42));
+        var idEncoders = mock(IdEncoders.class);
+        when(idEncoders.getDataStreamIdEncoder()).thenReturn(dsEncoder);
+
+        return new ConSysApiNatsConnector(servlet, nats, NODE_ID, null,
+            DataStreamingMode.PROACTIVE, 0, db, idEncoders);
+    }
+
+    IObsStore obsStore;
 
 
     static Message msg(String subject, String body, String replyTo, Headers headers)
@@ -105,6 +138,96 @@ public class TestConSysApiNatsConnector
     // -------------------------------------------------------------------------
     // Inbound routing
     // -------------------------------------------------------------------------
+
+    @Test
+    public void selfOriginNodeMessageIsDropped() throws Exception
+    {
+        var connector = new ConSysApiNatsConnector(servlet, nats, NODE_ID, null,
+            DataStreamingMode.PROACTIVE, 0, null, null, "uuid-X");
+        var headers = new Headers().add(NatsOutputStream.ORIGIN_NODE_HEADER, "uuid-X");
+
+        connector.onMessage(msg(DATA_SUBJECT, "{}", INBOX, headers));
+
+        verifyNoInteractions(root);
+        verify(nats, never()).publish(anyString(), any(byte[].class));
+    }
+
+
+    @Test
+    public void foreignOriginNodeMessageIsIngested() throws Exception
+    {
+        var connector = new ConSysApiNatsConnector(servlet, nats, NODE_ID, null,
+            DataStreamingMode.PROACTIVE, 0, null, null, "uuid-X");
+        var headers = new Headers().add(NatsOutputStream.ORIGIN_NODE_HEADER, "uuid-Y");
+
+        connector.onMessage(msg(DATA_SUBJECT, "{}", INBOX, headers));
+
+        verify(root).doPost(any(RequestContext.class));
+    }
+
+
+    @Test
+    public void nullOriginUuidDisablesDrop() throws Exception
+    {
+        var connector = newConnector(DataStreamingMode.PROACTIVE, 0); // no identity
+        var headers = new Headers().add(NatsOutputStream.ORIGIN_NODE_HEADER, "uuid-anything");
+
+        connector.onMessage(msg(DATA_SUBJECT, "{}", INBOX, headers));
+
+        verify(root).doPost(any(RequestContext.class));
+    }
+
+
+    @Test
+    public void duplicateObsIsSkippedAndAckedOk() throws Exception
+    {
+        var connector = newDedupeConnector(true);
+        var subject = "api.systems.s1.datastreams.d1.observations:data.json";
+
+        connector.onMessage(msg(subject, "{\"phenomenonTime\":\"2026-08-03T10:00:00Z\"}", INBOX, null));
+
+        verify(root, never()).doPost(any(RequestContext.class));
+        assertTrue("skip must ack ok", lastReplyTo(INBOX).contains("\"status\":\"ok\""));
+    }
+
+
+    @Test
+    public void newObsIsPosted() throws Exception
+    {
+        var connector = newDedupeConnector(false);
+        var subject = "api.systems.s1.datastreams.d1.observations:data.json";
+
+        connector.onMessage(msg(subject, "{\"phenomenonTime\":\"2026-08-03T10:00:00Z\"}", INBOX, null));
+
+        verify(root).doPost(any(RequestContext.class));
+    }
+
+
+    @Test
+    public void binaryFormatSkipsFingerprintCheck() throws Exception
+    {
+        var connector = newDedupeConnector(true); // would report duplicate if ever queried
+        var subject = "api.systems.s1.datastreams.d1.observations:data.swe-proto";
+
+        connector.onMessage(msg(subject, " binary", INBOX, null));
+
+        verify(root).doPost(any(RequestContext.class));
+        verifyNoInteractions(obsStore);
+    }
+
+
+    @Test
+    public void commandPostIsNeverDeduped() throws Exception
+    {
+        var connector = newDedupeConnector(true);
+        var subject = "api.systems.s1.controlstreams.c1.commands:data.json";
+
+        connector.onMessage(msg(subject, "{\"phenomenonTime\":\"2026-08-03T10:00:00Z\"}", INBOX, null));
+
+        verify(root).doPost(any(RequestContext.class));
+        verifyNoInteractions(obsStore);
+    }
+
 
     @Test
     public void echoedServerMessageIsIgnored() throws Exception

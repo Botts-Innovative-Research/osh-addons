@@ -21,11 +21,18 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import org.sensorhub.api.common.BigId;
+import org.sensorhub.api.common.IdEncoders;
+import org.sensorhub.api.database.IObsSystemDatabase;
+import org.sensorhub.api.datastore.obs.DataStreamKey;
 import org.sensorhub.impl.service.consys.ConSysApiServlet;
+import org.sensorhub.impl.service.consys.nats.ingest.ObsFingerprint;
 import org.sensorhub.impl.service.consys.InvalidRequestException;
 import org.sensorhub.impl.service.consys.resource.RequestContext;
 import org.sensorhub.impl.service.consys.resource.ResourceFormat;
@@ -97,6 +104,12 @@ public class ConSysApiNatsConnector
     final String defaultUser;         // connection-level acting user; may be null => anonymous
     final DataStreamingMode mode;
     final int leaseSeconds;           // ON_DEMAND lease TTL; 0 = leases never expire
+    /** Idempotent-ingest support; null when no db was provided => dedupe off. */
+    final IObsSystemDatabase db;
+    final IdEncoders idEncoders;
+    final ObsFingerprint fingerprint;
+    /** This node's identity UUID (CS-Origin-Node provenance); null = self-drop disabled. */
+    final String originNodeUuid;
     final Logger log;
 
     Dispatcher dispatcher;
@@ -104,6 +117,11 @@ public class ConSysApiNatsConnector
 
     // ON_DEMAND streaming state: active data streams keyed by data subject
     final Map<String, StreamEntry> streams = new ConcurrentHashMap<>();
+
+    // Idempotent-ingest memos: encoded ds id token -> internal id; internal id -> swe-json time field name
+    final Map<String, BigId> dsIdByToken = new ConcurrentHashMap<>();
+    final Map<BigId, Optional<String>> timeFieldByDsId = new ConcurrentHashMap<>();
+    final Set<BigId> binarySkipLogged = ConcurrentHashMap.newKeySet();
 
 
     /**
@@ -127,12 +145,40 @@ public class ConSysApiNatsConnector
     public ConSysApiNatsConnector(ConSysApiServlet servlet, Connection nats, String nodeId,
         String defaultUser, DataStreamingMode mode, int leaseSeconds)
     {
+        this(servlet, nats, nodeId, defaultUser, mode, leaseSeconds, null, null, null);
+    }
+
+
+    public ConSysApiNatsConnector(ConSysApiServlet servlet, Connection nats, String nodeId,
+        String defaultUser, DataStreamingMode mode, int leaseSeconds,
+        IObsSystemDatabase db, IdEncoders idEncoders)
+    {
+        this(servlet, nats, nodeId, defaultUser, mode, leaseSeconds, db, idEncoders, null);
+    }
+
+
+    /**
+     * Full constructor. {@code db} + {@code idEncoders} enable fingerprint-idempotent
+     * observation ingest: duplicate deliveries of the same observation are acked
+     * ok and skipped instead of re-POSTed; null disables the check.
+     * {@code originNodeUuid} is this node's identity for CS-Origin-Node provenance:
+     * outbound streams stamp it, and inbound messages carrying it are dropped
+     * (our own data coming back via any path); null disables both.
+     */
+    public ConSysApiNatsConnector(ConSysApiServlet servlet, Connection nats, String nodeId,
+        String defaultUser, DataStreamingMode mode, int leaseSeconds,
+        IObsSystemDatabase db, IdEncoders idEncoders, String originNodeUuid)
+    {
         this.servlet = Asserts.checkNotNull(servlet, ConSysApiServlet.class);
         this.nats = Asserts.checkNotNull(nats, Connection.class);
         this.nodeId = Asserts.checkNotNullOrEmpty(nodeId, "nodeId");
         this.defaultUser = defaultUser;
         this.mode = Asserts.checkNotNull(mode, DataStreamingMode.class);
         this.leaseSeconds = leaseSeconds;
+        this.db = db;
+        this.idEncoders = idEncoders;
+        this.fingerprint = (db != null && idEncoders != null) ? new ObsFingerprint(db, servlet.getLogger()) : null;
+        this.originNodeUuid = originNodeUuid;
         this.log = servlet.getLogger();
 
         this.subjectPrefix = nodeId + ".";
@@ -174,6 +220,14 @@ public class ConSysApiNatsConnector
         if (headers != null && NatsOutputStream.ORIGIN_SERVER.equals(headers.getFirst(NatsOutputStream.ORIGIN_HEADER)))
             return;
 
+        // drop our own data coming back via any path (a relay, a bridge)
+        if (originNodeUuid != null && headers != null
+            && originNodeUuid.equals(headers.getFirst(NatsOutputStream.ORIGIN_NODE_HEADER)))
+        {
+            log.debug("Dropping self-originated message on {}", msg.getSubject());
+            return;
+        }
+
         var subject = msg.getSubject();
         try
         {
@@ -207,6 +261,18 @@ public class ConSysApiNatsConnector
         var subject = msg.getSubject();
         try
         {
+            // a duplicate delivery of an already-stored observation is acked
+            // ok and skipped instead of re-POSTed
+            var fp = checkObsFingerprint(subject, msg.getData());
+            if (fp != null && fp.duplicate())
+            {
+                // INFO deliberately: a real duplicate delivery is rare and worth seeing
+                // (replay, reconnect overlap, or a relay loop being terminated)
+                log.info("Skipping duplicate observation on {}", subject);
+                replyOk(msg);
+                return;
+            }
+
             var ctx = new RequestContext(servlet, getResourceUri(subject),
                 new ByteArrayInputStream(msg.getData()));
             var fmt = ConSysSubjectValidator.parseDataSubjectFormat(subject);
@@ -225,7 +291,21 @@ public class ConSysApiNatsConnector
             }
 
             setUser();
-            servlet.getRootHandler().doPost(ctx);
+            // mark BEFORE the POST: osh-core publishes the obs event to the bus
+            // before the store insert returns, and the mark must win that race
+            // so the proactive publisher's egress check sees it
+            if (fp != null)
+                fingerprint.markIngested(fp.dsId(), fp.timeMs());
+            try
+            {
+                servlet.getRootHandler().doPost(ctx);
+            }
+            catch (Exception e)
+            {
+                if (fp != null)
+                    fingerprint.unmarkIngested(fp.dsId(), fp.timeMs());
+                throw e;
+            }
             replyOk(msg);
         }
         catch (NumberFormatException e)
@@ -250,6 +330,74 @@ public class ConSysApiNatsConnector
         finally
         {
             clearUser();
+        }
+    }
+
+
+    /** Result of an obs-fingerprint check: the resolved fingerprint + whether
+     *  it is already present (null overall = not applicable / fail open). */
+    record FpCheck(BigId dsId, long timeMs, boolean duplicate) {}
+
+
+    /**
+     * Resolve the fingerprint (datastream, phenomenonTime@ms) of an inbound
+     * observation publish and report whether it already exists locally. Only
+     * observation data subjects are checked (commands are intents, never
+     * deduped); binary formats are skipped (time not cheaply extractable —
+     * logged once per datastream); every failure fails OPEN (null result ⇒
+     * the POST proceeds unchecked).
+     */
+    FpCheck checkObsFingerprint(String subject, byte[] payload)
+    {
+        if (fingerprint == null)
+            return null;
+
+        try
+        {
+            // observation data subjects only:
+            // {nodeId}.systems.{sys}.datastreams.{ds}.observations:data[.fmt]
+            var tokens = subject.split("\\.");
+            if (tokens.length < 6
+                || !"systems".equals(tokens[1])
+                || !"datastreams".equals(tokens[3])
+                || !tokens[5].startsWith("observations" + ConSysSubjectValidator.DATA_SUFFIX))
+                return null;
+
+            var dsId = dsIdByToken.computeIfAbsent(tokens[4],
+                t -> idEncoders.getDataStreamIdEncoder().decodeID(t));
+
+            // format token after ":data."; bare ":data" parses as server-default
+            // json for non-binary streams — attempt json, extraction fails open
+            var dataIdx = subject.lastIndexOf(ConSysSubjectValidator.DATA_SUFFIX + ".");
+            var fmtToken = dataIdx >= 0
+                ? subject.substring(dataIdx + ConSysSubjectValidator.DATA_SUFFIX.length() + 1)
+                : "json";
+
+            var timeField = "swe-json".equals(fmtToken)
+                ? timeFieldByDsId.computeIfAbsent(dsId, id -> {
+                    var dsInfo = db.getDataStreamStore().get(new DataStreamKey(id));
+                    return Optional.ofNullable(dsInfo != null
+                        ? ObsFingerprint.findTimeFieldName(dsInfo.getRecordStructure()) : null);
+                }).orElse(null)
+                : null;
+
+            var timeMs = ObsFingerprint.extractPhenTimeMs(payload, fmtToken, timeField);
+            if (timeMs == null)
+            {
+                if (ConSysSubjectValidator.FORMAT_SUBTOPICS.containsKey(fmtToken)
+                    && !fmtToken.contains("json") && binarySkipLogged.add(dsId))
+                    log.debug("Fingerprint check skipped for binary format '{}' on datastream {} "
+                        + "(phenomenonTime not extractable — duplicates not detected on this path)",
+                        fmtToken, tokens[4]);
+                return null;
+            }
+
+            return new FpCheck(dsId, timeMs, fingerprint.exists(dsId, timeMs));
+        }
+        catch (Exception e)
+        {
+            log.debug("Fingerprint check failed on {} — proceeding with ingest: {}", subject, e.getMessage());
+            return null;
         }
     }
 

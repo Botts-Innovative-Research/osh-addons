@@ -69,9 +69,17 @@ public class TestResourceDataPublisherFormats
 
     private ResourceDataPublisher newPublisher(List<String> tokens, IObsSystemDatabase db, List<String> relayGlobs)
     {
+        return newPublisher(tokens, db, relayGlobs, null);
+    }
+
+
+    private ResourceDataPublisher newPublisher(List<String> tokens, IObsSystemDatabase db,
+        List<String> relayGlobs, List<String> obsExcludeGlobs)
+    {
         // collaborators aren't touched by format resolution
         return new ResourceDataPublisher(null, null, "api", null, db, null, null,
-            tokens, null, relayGlobs, LoggerFactory.getLogger(TestResourceDataPublisherFormats.class));
+            tokens, null, relayGlobs, obsExcludeGlobs, null,
+            LoggerFactory.getLogger(TestResourceDataPublisherFormats.class));
     }
 
 
@@ -294,17 +302,53 @@ public class TestResourceDataPublisherFormats
 
     private ResourceDataPublisher newStreamingPublisher(ConSysApiServlet servlet, List<String> tokens)
     {
+        return newStreamingPublisher(servlet, tokens, null, null);
+    }
+
+
+    /** Streaming publisher whose db resolves every datastream to a text-encoded
+     *  stream and (when {@code sysUid} != null) every system to that UID. */
+    private ResourceDataPublisher newStreamingPublisher(ConSysApiServlet servlet, List<String> tokens,
+        List<String> obsExcludeGlobs, String sysUid)
+    {
         var idEncoders = mock(IdEncoders.class);
         var sysEnc = mock(IdEncoder.class);
         var dsEnc = mock(IdEncoder.class);
+        var csEnc = mock(IdEncoder.class);
         when(sysEnc.encodeID(any(BigId.class))).thenReturn("sys1");
         when(dsEnc.encodeID(any(BigId.class))).thenReturn("ds1");
+        when(csEnc.encodeID(any(BigId.class))).thenReturn("cs1");
         when(idEncoders.getSystemIdEncoder()).thenReturn(sysEnc);
         when(idEncoders.getDataStreamIdEncoder()).thenReturn(dsEnc);
+        when(idEncoders.getCommandStreamIdEncoder()).thenReturn(csEnc);
+
+        var dsInfo = mock(IDataStreamInfo.class);
+        when(dsInfo.getRecordEncoding()).thenReturn(mock(TextEncoding.class));
+        var dsStore = mock(IDataStreamStore.class);
+        when(dsStore.get(any())).thenReturn(dsInfo);
+        when(dsStore.selectEntries(any(org.sensorhub.api.datastore.obs.DataStreamFilter.class)))
+            .thenAnswer(inv -> java.util.stream.Stream.of(java.util.Map.entry(
+                new org.sensorhub.api.datastore.obs.DataStreamKey(BigId.fromLong(1, 2)), dsInfo)));
+        var db = mock(IObsSystemDatabase.class);
+        when(db.getDataStreamStore()).thenReturn(dsStore);
+        if (sysUid != null)
+        {
+            var sys = mock(org.sensorhub.api.system.ISystemWithDesc.class);
+            when(sys.getUniqueIdentifier()).thenReturn(sysUid);
+            var sysStore = mock(org.sensorhub.api.datastore.system.ISystemDescStore.class);
+            when(sysStore.getCurrentVersion(any(BigId.class))).thenReturn(sys);
+            when(db.getSystemDescStore()).thenReturn(sysStore);
+        }
+        else
+        {
+            when(db.getSystemDescStore()).thenReturn(
+                mock(org.sensorhub.api.datastore.system.ISystemDescStore.class));
+        }
 
         return new ResourceDataPublisher(servlet, mock(Connection.class), "api", null,
-            mockDb(mock(TextEncoding.class)), idEncoders, null,
-            tokens, null, null, LoggerFactory.getLogger(TestResourceDataPublisherFormats.class));
+            db, idEncoders, null,
+            tokens, null, null, obsExcludeGlobs, null,
+            LoggerFactory.getLogger(TestResourceDataPublisherFormats.class));
     }
 
 
@@ -347,5 +391,117 @@ public class TestResourceDataPublisherFormats
         pub.startStream(BigId.fromLong(1, 2), BigId.fromLong(1, 3));
 
         assertTrue("no stream must be registered", pub.streams.isEmpty());
+    }
+
+
+    /*
+     * Systems this node did not originate get NO proactive observation data
+     * streams — via UID exclude globs or the IngestOriginRegistry — while
+     * native systems and command streams are unaffected. The registry is
+     * JVM-global, so tests reset it.
+     */
+
+    @org.junit.Before
+    @org.junit.After
+    public void clearRegistry()
+    {
+        IngestOriginRegistry.clearForTests();
+    }
+
+
+    /** Servlet whose streaming GETs always succeed (failing format never matches). */
+    private ConSysApiServlet okServlet() throws Exception
+    {
+        return mockServlet(ResourceFormat.SWE_XML);
+    }
+
+
+    @Test
+    public void excludeGlobSuppressesObsStreams() throws Exception
+    {
+        var pub = newStreamingPublisher(okServlet(), List.of("json"),
+            List.of("*:mirror"), "urn:osh:sensor:test:001:mirror");
+
+        pub.startStream(BigId.fromLong(1, 2), BigId.fromLong(1, 3));
+
+        assertTrue("excluded system must get no obs streams", pub.streams.isEmpty());
+    }
+
+
+    @Test
+    public void registryForeignSuppressesObsStreams() throws Exception
+    {
+        IngestOriginRegistry.record("urn:osh:sensor:remote:x", "remote-node");
+        var pub = newStreamingPublisher(okServlet(), List.of("json"),
+            null, "urn:osh:sensor:remote:x");
+
+        pub.startStream(BigId.fromLong(1, 2), BigId.fromLong(1, 3));
+
+        assertTrue("registry-foreign system must get no obs streams", pub.streams.isEmpty());
+    }
+
+
+    @Test
+    public void nativeSystemStillPublishes() throws Exception
+    {
+        IngestOriginRegistry.record("urn:osh:sensor:remote:x", "remote-node");
+        var pub = newStreamingPublisher(okServlet(), List.of("json"),
+            List.of("*:mirror"), "urn:osh:sensor:native:001");
+
+        pub.startStream(BigId.fromLong(1, 2), BigId.fromLong(1, 3));
+
+        assertNotNull("native system must keep publishing", pub.streams.get(BigId.fromLong(1, 2)));
+    }
+
+
+    @Test
+    public void unresolvableUidStillPublishes() throws Exception
+    {
+        // fail OPEN — deliberately the opposite of shouldRelayCommands: a native
+        // system must never go silent because its UID could not be resolved
+        var pub = newStreamingPublisher(okServlet(), List.of("json"),
+            List.of("*:mirror"), null); // system store resolves nothing
+
+        pub.startStream(BigId.fromLong(1, 2), BigId.fromLong(1, 3));
+
+        assertNotNull("unresolvable UID must fail open (publish)", pub.streams.get(BigId.fromLong(1, 2)));
+    }
+
+
+    @Test
+    public void lateRegistryRecordClosesOpenObsStreams() throws Exception
+    {
+        var uid = "urn:osh:sensor:late:001";
+        var pub = newStreamingPublisher(okServlet(), List.of("json"), null, uid);
+
+        pub.startStream(BigId.fromLong(1, 2), BigId.fromLong(1, 3));
+        assertNotNull("stream open before the system is marked foreign", pub.streams.get(BigId.fromLong(1, 2)));
+
+        // simulate client discovery marking the system foreign after the scan
+        // (the listener is wired in start(); the handling logic is what matters)
+        IngestOriginRegistry.record(uid, "remote-node");
+        pub.onSystemMarkedForeign(uid);
+
+        assertTrue("open obs streams must be closed on late foreign mark", pub.streams.isEmpty());
+    }
+
+
+    @Test
+    public void exclusionDoesNotAffectCommandStreams() throws Exception
+    {
+        IngestOriginRegistry.record("urn:osh:sensor:remote:x", "remote-node");
+        var pub = newStreamingPublisher(okServlet(), List.of("json"),
+            null, "urn:osh:sensor:remote:x");
+
+        // obs side suppressed...
+        pub.startStream(BigId.fromLong(1, 2), BigId.fromLong(1, 3));
+        assertTrue(pub.streams.isEmpty());
+
+        // ...but command/status streams still open (command passback must work;
+        // the echo half dies on the null command store and is skipped, the
+        // status half is an ordinary streaming GET and succeeds)
+        pub.startCommandStreams(BigId.fromLong(1, 9), BigId.fromLong(1, 3));
+        assertNotNull("command/status streams must stay on for excluded systems",
+            pub.cmdStreams.get(BigId.fromLong(1, 9)));
     }
 }
