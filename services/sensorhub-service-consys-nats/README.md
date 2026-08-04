@@ -6,9 +6,9 @@ attaches to the Connected Systems API service and bridges it onto a NATS server:
 lifecycle events and live data go out as NATS messages, and client publishes on the data
 subjects are ingested through the CS API.
 
-OSH always acts as a NATS **client**. The server can be external (`serverUrl`) or a local
-`nats-server` process this module launches and supervises (`embeddedServer.enabled`); there is
-no pure-Java NATS server. Part 3 currently specifies only an MQTT binding, so the NATS subject
+OSH always acts as a NATS **client** connecting to an external NATS server (`server.url`);
+there is no pure-Java NATS server, so run one separately (e.g. the docker stack, or any
+`nats-server`). Part 3 currently specifies only an MQTT binding, so the NATS subject
 and control-channel protocol here is OSH-specific.
 
 ## Subject hierarchy
@@ -32,12 +32,12 @@ or dedupe.
 ## Streaming modes
 
 - **PROACTIVE** (default, the Part 3 baseline): live observations stream continuously on
-  `…observations:data.<fmt>` for every format in `proactiveDataFormats`, and live
+  `…observations:data.<fmt>` for every format in `proactive.dataFormats`, and live
   commands/status stream on `…controlstreams.{id}.commands:data[.json]` /
   `…status:data[.json]`. Clients just subscribe.
 - **ON_DEMAND** (the spec's optional flow control): clients request streams via
   `<nodeId>._control.subscribe` / `unsubscribe` (body = the data subject). Subscriptions are
-  leases (`onDemandLeaseSeconds`, renewed by re-subscribing); clients should send a stable
+  leases (`onDemand.leaseSeconds`, renewed by re-subscribing); clients should send a stable
   `CS-Client-Id` header.
 
 **Request-reply reads** (`<nodeId>._control.get`, both modes): the request body is a CS API
@@ -63,44 +63,50 @@ back onto the bus. Four cooperating mechanisms:
    extraction); all checks fail open.
 4. **Ingest-terminal publishing**: no proactive observation streams are opened for systems this
    node did not originate, via the ingest-origin registry (fed by the NATS client module) and
-   the `proactiveDataUidExcludePatterns` globs. Unresolvable UIDs fail open so a native system
+   the `proactive.excludeSystemUids` globs. Unresolvable UIDs fail open so a native system
    is never silenced by accident. Command/status streams and event notifications stay on for
    excluded systems (command passback needs them).
 
 ## Configuration
 
-### Connection
+The configuration is validated when the module is initialized: invalid values fail init with a
+message listing every problem at once (bad `nodeId`, malformed URL/UUID, conflicting NATS auth,
+negative lease/limits), and settings that are inert in the selected streaming mode — or globs
+that look like regexes — produce warnings. UID globs support `*` as the **only** wildcard;
+every other character matches literally.
 
-| field                 | default                 | description |
-|-----------------------|-------------------------|-------------|
-| `nodeId`              | `api`                   | NATS subject namespace prefix for all subjects. |
-| `serverUrl`           | `nats://localhost:4222` | External NATS server URL. Ignored when the embedded server is enabled. |
-| `username` / `password` | *(unset)*             | NATS user/password authentication (optional). |
-| `token`               | *(unset)*               | NATS token authentication (optional, alternative to user/password). |
-| `connectionTimeoutMs` | `5000`                  | Max wait when establishing the NATS connection. |
-| `maxReconnects`       | `-1`                    | Reconnection attempts if the connection drops (`-1` = unlimited). |
+### Identity
+
+| field           | default   | description |
+|-----------------|-----------|-------------|
+| `nodeId`        | `api`     | NATS subject namespace prefix: a single subject token (letters, digits, `_`, `-`). |
+| `originNodeUuid`| *(unset)* | Fallback node identity for `CS-Origin-Node` when the nodehealth identity file is absent. Normally blank; the persisted file wins (a differing config value logs a warning). With neither, the header is omitted and provenance self-drop is disabled. |
+| `actingUser`    | *(unset)* | Local OSH user account the module acts as for its internal CS API calls (ingest, request-reply reads, command relay). Blank = anonymous. Unrelated to the NATS credentials. |
+
+### NATS server (`server` block)
+
+| field                   | default                 | description |
+|-------------------------|-------------------------|-------------|
+| `url`                   | `nats://localhost:4222` | NATS server URL (`nats://`, `tls://`, …). |
+| `username` / `password` | *(unset)*               | NATS user/password authentication. Mutually exclusive with `authToken`. |
+| `authToken`             | *(unset)*               | NATS token authentication. Mutually exclusive with `username`/`password`. |
+| `connectTimeoutSeconds` | `5`                     | Max wait when establishing the connection. Reconnects after a drop are always unlimited. |
 
 ### Data streaming
 
-| field                  | default     | description |
-|------------------------|-------------|-------------|
-| `dataStreamingMode`    | `PROACTIVE` | `PROACTIVE`: publish live data continuously (spec baseline). `ON_DEMAND`: stream only while a client holds a lease. |
-| `onDemandLeaseSeconds` | `300`       | ON_DEMAND only: lease lifetime without renewal. `0` = never expires. |
-| `proactiveDataFormats` | *(empty)*   | Formats streamed simultaneously, each on its own `:data.<token>` subject. Enum names in config: `JSON`, `SWE_JSON`, `SWE_BINARY`, `SWE_CSV`, `SWE_PROTO`, `SWE_FLATBUFFERS`, `OM_JSON`, `SML_JSON`. Empty = server default only (resolved per datastream: `swe-binary` for binary-encoded streams, `json` otherwise). The default format also feeds the bare `:data` subject. `SWE_PROTO`/`SWE_FLATBUFFERS` need their codec modules registered with the CS API. |
+| field                        | default     | description |
+|------------------------------|-------------|-------------|
+| `dataStreamingMode`          | `PROACTIVE` | `PROACTIVE`: publish live data continuously (spec baseline); the `proactive` block applies. `ON_DEMAND`: stream only while a client holds a lease; the `onDemand` block applies. |
+| `proactive.dataFormats`      | *(empty)*   | Formats streamed simultaneously, each on its own `:data.<token>` subject. Enum names in config: `JSON`, `SWE_JSON`, `SWE_BINARY`, `SWE_CSV`, `SWE_PROTO`, `SWE_FLATBUFFERS`, `OM_JSON`, `SML_JSON`. Empty = server default only (resolved per datastream: `swe-binary` for binary-encoded streams, `json` otherwise). The default format also feeds the bare `:data` subject. `SWE_PROTO`/`SWE_FLATBUFFERS` need their codec modules registered with the CS API. |
+| `proactive.excludeSystemUids`| *(empty)*   | Globs against a datastream's parent system UID; matches get NO proactive observation streams. Command/status and event notifications unaffected. Systems mirrored by the NATS client are excluded automatically; these globs cover third-party relays. |
+| `onDemand.leaseSeconds`      | `300`       | Lease lifetime without renewal. `0` = never expires. |
 
-### Commands
+### Command relay (`proactive.commandRelay` block)
 
-| field                     | default   | description |
-|---------------------------|-----------|-------------|
-| `commandRelayMode`        | `false`   | Hub/mirror nodes only: connect as the command RECEIVER on control streams and publish each submitted command immediately for an external relay. MUST stay `false` on nodes with local drivers (only one receiver may connect per stream). |
-| `commandRelayUidPatterns` | *(empty)* | Relay mode only: glob patterns against a control stream's parent system UID to relay per stream. Empty = relay every stream. |
-
-### Provenance and no-republish
-
-| field                             | default   | description |
-|-----------------------------------|-----------|-------------|
-| `originNodeUuid`                  | *(unset)* | Fallback node identity for `CS-Origin-Node` when the nodehealth identity file is absent. Normally blank; the persisted file wins. With neither, the header is omitted and provenance self-drop is disabled. |
-| `proactiveDataUidExcludePatterns` | *(empty)* | Globs against a datastream's parent system UID; matches get NO proactive observation streams. Command/status and event notifications unaffected. Systems mirrored by the NATS client are excluded automatically; these globs cover third-party relays. |
+| field           | default   | description |
+|-----------------|-----------|-------------|
+| `enabled`       | `false`   | Hub/mirror nodes only: connect as the command RECEIVER on control streams and publish each submitted command immediately for an external relay. Only one receiver may connect per stream, so on nodes with local drivers scope with `onlySystemUids` or leave disabled (an unscoped relay next to local drivers logs a warning naming them). |
+| `onlySystemUids`| *(empty)* | Globs against a control stream's parent system UID: relay only matching streams, others keep the observe-only echo. **Empty = relay every stream.** |
 
 ### JetStream (`jetStream` block)
 
@@ -117,17 +123,6 @@ with JetStream on (`nats-server -js`).
 | `fileStorage`       | `true`       | `true` = file storage (survives restarts); `false` = memory. |
 | `maxAgeSeconds`     | `3600`       | Max age of retained messages (`0` = unlimited). |
 | `maxMsgsPerSubject` | `0`          | Max messages per subject (`0` = unlimited; `1` = last-value cache). |
-
-### Embedded server (`embeddedServer` block)
-
-| field              | default     | description |
-|--------------------|-------------|-------------|
-| `enabled`          | `false`     | Launch and manage a local `nats-server` instead of using `serverUrl`. |
-| `executablePath`   | *(unset)*   | Path to the `nats-server` binary; blank = look up on PATH. |
-| `host`             | `localhost` | Bind address. |
-| `port`             | `4222`      | Listen port. |
-| `jetStream`        | `false`     | Start the embedded server with JetStream enabled. |
-| `startupTimeoutMs` | `10000`     | Max wait for the server to accept connections. |
 
 ## Authorization
 
