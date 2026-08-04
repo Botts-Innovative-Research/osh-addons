@@ -26,7 +26,6 @@ import org.sensorhub.impl.service.consys.ConSysApiService;
 import org.sensorhub.impl.service.consys.nats.ConSysApiNatsServiceConfig.DataStreamingMode;
 import org.sensorhub.impl.service.consys.nats.publish.ResourceDataPublisher;
 import org.sensorhub.impl.service.consys.nats.publish.ResourceEventPublisher;
-import org.sensorhub.impl.service.consys.nats.server.EmbeddedNatsServer;
 import io.nats.client.Connection;
 import io.nats.client.Nats;
 import io.nats.client.Options;
@@ -42,8 +41,8 @@ import io.nats.client.api.StreamConfiguration;
  * The NATS analogue of {@code ConSysApiMqttService}.
  * </p><p>
  * Unlike the MQTT binding (which attaches to a separate embedded-broker module),
- * this module manages its own NATS connection — to an external server or to a
- * locally launched/managed one (see {@link ConSysApiNatsServiceConfig}). On
+ * this module manages its own NATS client connection to an external server
+ * (see {@link ConSysApiNatsServiceConfig}). On
  * attach it registers the {@link ConSysApiNatsConnector} (ingest + optional flow
  * control), starts the {@link ResourceEventPublisher} (CloudEvents lifecycle
  * notifications), and — in PROACTIVE mode — the {@link ResourceDataPublisher}
@@ -55,7 +54,6 @@ import io.nats.client.api.StreamConfiguration;
  */
 public class ConSysApiNatsService extends AbstractModule<ConSysApiNatsServiceConfig> implements IServiceModule<ConSysApiNatsServiceConfig>
 {
-    protected EmbeddedNatsServer embeddedServer;
     protected Connection natsConnection;
     protected ConSysApiNatsConnector connector;
     protected ResourceEventPublisher resourceEventPublisher;
@@ -69,16 +67,8 @@ public class ConSysApiNatsService extends AbstractModule<ConSysApiNatsServiceCon
         startAsync = true;
         reportStatus("Connecting to NATS server...");
 
-        // 1. optionally launch the embedded/managed NATS server
+        // 1. connect to the NATS server as a client
         var serverUrl = config.serverUrl;
-        if (config.embeddedServer != null && config.embeddedServer.enabled)
-        {
-            embeddedServer = new EmbeddedNatsServer(config.embeddedServer, getLogger());
-            embeddedServer.start();
-            serverUrl = embeddedServer.getServerUrl();
-        }
-
-        // 2. connect to the NATS server as a client
         try
         {
             natsConnection = connect(serverUrl);
@@ -93,7 +83,7 @@ public class ConSysApiNatsService extends AbstractModule<ConSysApiNatsServiceCon
         if (config.jetStream != null && config.jetStream.enabled)
             ensureJetStreamStream();
 
-        // 3. attach to the CONSYS API REST service, then register handler + publishers
+        // 2. attach to the CONSYS API REST service, then register handler + publishers
         reportStatus("Waiting for Connected Systems API service...");
         getParentHub().getModuleRegistry().waitForModuleType(ConSysApiService.class, ModuleState.STARTED)
             .thenAccept(service -> {
@@ -394,13 +384,6 @@ public class ConSysApiNatsService extends AbstractModule<ConSysApiNatsServiceCon
                 Thread.currentThread().interrupt();
             }
             natsConnection = null;
-        }
-
-        // stop the embedded server if we launched one
-        if (embeddedServer != null)
-        {
-            embeddedServer.stop();
-            embeddedServer = null;
         }
     }
 }

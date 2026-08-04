@@ -25,9 +25,8 @@ import org.sensorhub.impl.service.consys.nats.subject.ConSysSubjectValidator;
  * <p>
  * Configuration class for the Connected Systems API NATS service module.
  * </p><p>
- * The module always connects to a NATS server as a <i>client</i>. That server
- * can either be an external one (give its URL below) or a local one that this
- * module launches and manages itself (enable the embedded server section).
+ * The module always connects to an external NATS server as a <i>client</i>
+ * (there is no pure-Java NATS server to embed).
  * </p>
  *
  * @author CR31
@@ -93,9 +92,8 @@ public class ConSysApiNatsServiceConfig extends ServiceConfig
     public String nodeId = "api";
 
 
-    @DisplayInfo(label="NATS Server URL", desc="URL of the external NATS server to connect to "
-        + "(e.g. nats://localhost:4222). Ignored when the embedded server below is enabled, "
-        + "in which case the module connects to the embedded server instead.")
+    @DisplayInfo(label="NATS Server URL", desc="URL of the NATS server to connect to "
+        + "(e.g. nats://localhost:4222)")
     public String serverUrl = "nats://localhost:4222";
 
 
@@ -191,10 +189,6 @@ public class ConSysApiNatsServiceConfig extends ServiceConfig
     public JetStreamConfig jetStream = new JetStreamConfig();
 
 
-    @DisplayInfo(label="Embedded Server", desc="Optional embedded/managed NATS server settings")
-    public EmbeddedServerConfig embeddedServer = new EmbeddedServerConfig();
-
-
     /**
      * <p>
      * Optional JetStream persistence. When enabled, the module ensures a
@@ -203,7 +197,7 @@ public class ConSysApiNatsServiceConfig extends ServiceConfig
      * replayed by durable consumers (and browsed in NUI's Streams tab).
      * </p><p>
      * Requires the NATS server to be started with JetStream enabled
-     * ({@code nats-server -js}, or the embedded server with JetStream on).
+     * ({@code nats-server -js}).
      * </p>
      */
     public static class JetStreamConfig
@@ -231,46 +225,6 @@ public class ConSysApiNatsServiceConfig extends ServiceConfig
             + "per subject (0 = unlimited). E.g. 1 keeps only the latest message on every "
             + "subject, turning the stream into a browsable last-value cache per datastream.")
         public int maxMsgsPerSubject = 0;
-    }
-
-
-    /**
-     * <p>
-     * Settings for an embedded (locally managed) NATS server.
-     * </p><p>
-     * NATS server is a native Go binary; there is no pure-Java NATS server, so
-     * "embedded" here means this module launches and supervises a local
-     * {@code nats-server} process and then connects to it as a client.
-     * </p>
-     */
-    public static class EmbeddedServerConfig
-    {
-        @DisplayInfo(label="Enabled", desc="Set to true to launch and manage a local nats-server "
-            + "process instead of connecting to the external server URL")
-        public boolean enabled = false;
-
-
-        @DisplayInfo(label="Executable Path", desc="Path to the nats-server executable. If left "
-            + "blank, 'nats-server' is looked up on the system PATH.")
-        public String executablePath;
-
-
-        @DisplayInfo(label="Bind Address", desc="Address the embedded server binds to")
-        public String host = "localhost";
-
-
-        @DisplayInfo(label="Port", desc="Port the embedded server listens on")
-        public int port = 4222;
-
-
-        @DisplayInfo(label="Enable JetStream", desc="Start the embedded server with JetStream "
-            + "(persistence) enabled")
-        public boolean jetStream = false;
-
-
-        @DisplayInfo(label="Startup Timeout (ms)", desc="Maximum time, in milliseconds, to wait "
-            + "for the embedded server to become ready to accept connections")
-        public int startupTimeoutMs = 10000;
     }
 
 
