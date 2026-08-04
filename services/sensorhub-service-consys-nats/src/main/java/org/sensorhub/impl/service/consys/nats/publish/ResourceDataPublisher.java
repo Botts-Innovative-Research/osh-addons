@@ -273,7 +273,7 @@ public class ResourceDataPublisher
 
     /**
      * True = open NO observation data streams for this system: its UID matches
-     * {@code proactiveDataUidExcludePatterns}, or the {@link IngestOriginRegistry}
+     * {@code proactive.excludeSystemUids}, or the {@link IngestOriginRegistry}
      * marks it as ingested from another node. Command/status streams and
      * CloudEvents notifications are never affected. An unresolvable UID fails
      * OPEN (publish) — deliberately the opposite of {@link #shouldRelayCommands}:
@@ -595,7 +595,7 @@ public class ResourceDataPublisher
 
 
     /**
-     * Resolve the server-default output (empty {@code proactiveDataFormats}) to a
+     * Resolve the server-default output (empty {@code proactive.dataFormats}) to a
      * concrete token + format for one datastream, mirroring the CS API's own AUTO
      * negotiation for a non-browser streaming GET ({@code ObsHandler.getBinding}):
      * SWE binary for a {@link BinaryEncoding} datastream, OM JSON otherwise. This

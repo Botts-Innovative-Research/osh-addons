@@ -17,6 +17,8 @@ package org.sensorhub.impl.service.consys.nats;
 import java.util.ArrayList;
 import java.util.List;
 import org.sensorhub.api.config.DisplayInfo;
+import org.sensorhub.api.config.DisplayInfo.FieldType;
+import org.sensorhub.api.config.DisplayInfo.FieldType.Type;
 import org.sensorhub.api.service.ServiceConfig;
 import org.sensorhub.impl.service.consys.nats.subject.ConSysSubjectValidator;
 
@@ -27,6 +29,11 @@ import org.sensorhub.impl.service.consys.nats.subject.ConSysSubjectValidator;
  * </p><p>
  * The module always connects to an external NATS server as a <i>client</i>
  * (there is no pure-Java NATS server to embed).
+ * </p><p>
+ * The configuration is validated when the module is initialized: invalid
+ * values fail init with a message listing every problem at once, and settings
+ * that are inert in the selected mode produce warnings (see
+ * {@link ConSysApiNatsConfigValidator}).
  * </p>
  *
  * @author CR31
@@ -85,74 +92,12 @@ public class ConSysApiNatsServiceConfig extends ServiceConfig
     }
 
 
-    @DisplayInfo(label="Node ID", desc="NATS subject namespace prefix for all subjects. Per OGC CS "
+    @DisplayInfo(label="Node ID", desc="NATS subject namespace prefix for all subjects: a single "
+        + "subject token (letters, digits, '_' and '-' only — no '.', '*' or '>'). Per OGC CS "
         + "API Part 3, subjects become '{nodeId}.systems.{id}' and "
-        + "'{nodeId}.systems.{id}...observations:data'. Defaults to 'api'. Mirrors the MQTT "
-        + "binding's nodeId (with '.' separators instead of '/').")
+        + "'{nodeId}.systems.{id}...observations:data'. Mirrors the MQTT binding's nodeId "
+        + "(with '.' separators instead of '/').")
     public String nodeId = "api";
-
-
-    @DisplayInfo(label="NATS Server URL", desc="URL of the NATS server to connect to "
-        + "(e.g. nats://localhost:4222)")
-    public String serverUrl = "nats://localhost:4222";
-
-
-    @DisplayInfo(label="Username", desc="Username for NATS user/password authentication (optional)")
-    public String username;
-
-
-    @DisplayInfo(label="Password", desc="Password for NATS user/password authentication (optional)")
-    public String password;
-
-
-    @DisplayInfo(label="Auth Token", desc="Token for NATS token-based authentication "
-        + "(optional, alternative to username/password)")
-    public String token;
-
-
-    @DisplayInfo(label="Connection Timeout (ms)", desc="Maximum time, in milliseconds, to wait "
-        + "when establishing the NATS connection")
-    public int connectionTimeoutMs = 5000;
-
-
-    @DisplayInfo(label="Max Reconnects", desc="Maximum number of reconnection attempts the NATS "
-        + "client will make if the connection is lost (-1 for unlimited)")
-    public int maxReconnects = -1;
-
-
-    @DisplayInfo(label="Data Streaming Mode", desc="PROACTIVE: OSH publishes live Resource Data to "
-        + "the data subjects continuously for active streams (spec baseline; clients just "
-        + "subscribe). ON_DEMAND: OSH streams a data subject only while a client has requested it "
-        + "via the control channel (optional flow control).")
-    public DataStreamingMode dataStreamingMode = DataStreamingMode.PROACTIVE;
-
-
-    @DisplayInfo(label="On-Demand Lease (seconds)", desc="ON_DEMAND mode only: how long a "
-        + "client's stream subscription stays alive without renewal. Clients renew by re-sending "
-        + "the same control-channel subscribe request (the subscribe reply carries this value as "
-        + "'leaseSeconds'). Prevents streams leaking forever when a client dies without "
-        + "unsubscribing. 0 = leases never expire (explicit unsubscribe required).")
-    public int onDemandLeaseSeconds = 300;
-
-
-    @DisplayInfo(label="Command Relay Mode", desc="Hub/mirror nodes only: connect as the command "
-        + "RECEIVER on every control stream and publish each submitted command to its "
-        + "':commands:data' / ':commands:data.json' subjects immediately, so an external relay (e.g. the OSHConnect "
-        + "broker) can forward it to the source node. This also makes commands get recorded in the "
-        + "write database and auto-acknowledged PENDING. MUST stay false on nodes with local "
-        + "drivers: only one command receiver may connect per stream, so this would fight the "
-        + "driver's own connection (driver-backed streams fall back to the status-triggered echo, "
-        + "but only if the driver connects first).")
-    public boolean commandRelayMode = false;
-
-
-    @DisplayInfo(label="Command Relay System UIDs", desc="Command relay mode only: glob patterns "
-        + "(e.g. '*:mirror', 'urn:osh:system:remote:*') matched against a control stream's parent "
-        + "system UID to decide PER STREAM whether to connect as the command receiver (relay) or "
-        + "use the observe-only echo. Empty = relay every control stream. Lets a dual-role node "
-        + "(local drivers + mirrored systems) relay only the mirrored streams while driver-backed "
-        + "streams keep their drivers as the receiver.")
-    public List<String> commandRelayUidPatterns = new ArrayList<>();
 
 
     @DisplayInfo(label="Origin Node UUID", desc="Fallback node identity for the CS-Origin-Node "
@@ -162,31 +107,158 @@ public class ConSysApiNatsServiceConfig extends ServiceConfig
     public String originNodeUuid;
 
 
-    @DisplayInfo(label="Proactive Data Exclude System UIDs", desc="PROACTIVE mode: glob patterns "
-        + "(e.g. '*:mirror', 'urn:osh:system:remote:*') matched against a datastream's parent "
-        + "system UID. Matching systems get NO proactive observation data streams "
-        + "(ingest-terminal publishing for mirrored/ingested systems — one copy per broker, "
-        + "never republish what this node did not originate). Command/status streams and "
-        + "resource event notifications are NOT affected. Systems mirrored by the NATS client "
-        + "module are excluded automatically (origin registry); these globs cover mirrors "
-        + "created by third-party relays.")
-    public List<String> proactiveDataUidExcludePatterns = new ArrayList<>();
+    @DisplayInfo(label="OSH Acting User", desc="Local OSH user account this module acts as when "
+        + "it calls the CS API internally (observation ingest, request-reply reads, command "
+        + "relay). Blank = anonymous; must have the corresponding permissions when CS API access "
+        + "control is enabled. Unrelated to the NATS server credentials below.")
+    public String actingUser;
 
 
-    @DisplayInfo(label="Proactive Data Formats", desc="Wire formats for proactively streamed "
-        + "Resource Data. Each selected format is streamed simultaneously on its own "
-        + "':data.<token>' subject, and the server-default format also feeds the bare ':data' "
-        + "parent subject (as an extra default-format stream if the default is not in this list). "
-        + "Empty list = server default only, resolved per datastream to a concrete token "
-        + "('swe-binary' for binary-encoded streams, 'json' otherwise) and published on both "
-        + "':data' and its resolved leaf. All messages carry a Content-Type header. Formats must "
-        + "be served by the CS API for the datastream "
-        + "(SWE_PROTO/SWE_FLATBUFFERS require their codec modules + custom-format registration).")
-    public List<ProactiveFormat> proactiveDataFormats = new ArrayList<>();
+    @DisplayInfo(label="NATS Server", desc="NATS server address and client credentials")
+    public NatsServerConfig server = new NatsServerConfig();
+
+
+    @DisplayInfo(label="Data Streaming Mode", desc="PROACTIVE: OSH publishes live Resource Data to "
+        + "the data subjects continuously for active streams (spec baseline; clients just "
+        + "subscribe); the 'Proactive Streaming' section applies. ON_DEMAND: OSH streams a data "
+        + "subject only while a client has requested it via the control channel (optional flow "
+        + "control); the 'On-Demand Streaming' section applies.")
+    public DataStreamingMode dataStreamingMode = DataStreamingMode.PROACTIVE;
+
+
+    @DisplayInfo(label="Proactive Streaming", desc="PROACTIVE mode only (ignored in ON_DEMAND)")
+    public ProactiveConfig proactive = new ProactiveConfig();
+
+
+    @DisplayInfo(label="On-Demand Streaming", desc="ON_DEMAND mode only (ignored in PROACTIVE)")
+    public OnDemandConfig onDemand = new OnDemandConfig();
 
 
     @DisplayInfo(label="JetStream", desc="Optional JetStream persistence settings")
     public JetStreamConfig jetStream = new JetStreamConfig();
+
+
+    /**
+     * <p>
+     * NATS server connection settings. The credentials authenticate this
+     * module against the NATS server only — they are unrelated to OSH user
+     * accounts (see {@code actingUser} for the OSH side).
+     * </p>
+     */
+    public static class NatsServerConfig
+    {
+        @DisplayInfo(label="Server URL", desc="URL of the NATS server to connect to "
+            + "(e.g. nats://localhost:4222)")
+        public String url = "nats://localhost:4222";
+
+
+        @DisplayInfo(label="Username", desc="Username for NATS user/password authentication "
+            + "(optional; leave blank for an unauthenticated server; mutually exclusive with "
+            + "the auth token)")
+        public String username;
+
+
+        @FieldType(Type.PASSWORD)
+        @DisplayInfo(label="Password", desc="Password for NATS user/password authentication")
+        public String password;
+
+
+        @FieldType(Type.PASSWORD)
+        @DisplayInfo(label="Auth Token", desc="Token for NATS token-based authentication "
+            + "(mutually exclusive with username/password)")
+        public String authToken;
+
+
+        @DisplayInfo(label="Connect Timeout (seconds)", desc="Maximum time to wait when "
+            + "establishing the NATS connection. Reconnection attempts after a lost connection "
+            + "are unlimited (not configurable — a transport that stops reconnecting is "
+            + "silently dead).")
+        public int connectTimeoutSeconds = 5;
+    }
+
+
+    /**
+     * <p>
+     * Settings that apply only in {@link DataStreamingMode#PROACTIVE} mode
+     * (ignored, with a warning at init, in ON_DEMAND mode).
+     * </p>
+     */
+    public static class ProactiveConfig
+    {
+        @DisplayInfo(label="Data Formats", desc="Wire formats for proactively streamed "
+            + "Resource Data. Each selected format is streamed simultaneously on its own "
+            + "':data.<token>' subject, and the server-default format also feeds the bare ':data' "
+            + "parent subject (as an extra default-format stream if the default is not in this list). "
+            + "Empty list = server default only, resolved per datastream to a concrete token "
+            + "('swe-binary' for binary-encoded streams, 'json' otherwise) and published on both "
+            + "':data' and its resolved leaf. All messages carry a Content-Type header. Formats must "
+            + "be served by the CS API for the datastream "
+            + "(SWE_PROTO/SWE_FLATBUFFERS require their codec modules + custom-format registration).")
+        public List<ProactiveFormat> dataFormats = new ArrayList<>();
+
+
+        @DisplayInfo(label="Exclude System UIDs", desc="Glob patterns matched against a "
+            + "datastream's parent system UID ('*' is the only wildcard; every other character "
+            + "is literal). Matching systems get NO proactive observation data streams "
+            + "(ingest-terminal publishing for mirrored/ingested systems — one copy per broker, "
+            + "never republish what this node did not originate). Empty = exclude nothing. "
+            + "Command/status streams and resource event notifications are NOT affected. Systems "
+            + "mirrored by the NATS client module are excluded automatically (origin registry); "
+            + "these globs cover mirrors created by third-party relays.")
+        public List<String> excludeSystemUids = new ArrayList<>();
+
+
+        @DisplayInfo(label="Command Relay", desc="Hub/mirror nodes only — see the warnings inside")
+        public CommandRelayConfig commandRelay = new CommandRelayConfig();
+    }
+
+
+    /**
+     * <p>
+     * Command relay settings (PROACTIVE mode only). Relay mode makes this
+     * module connect as the command <i>receiver</i> on control streams, which
+     * competes with local drivers for the single receiver slot per stream —
+     * hence the UID scoping option.
+     * </p>
+     */
+    public static class CommandRelayConfig
+    {
+        @DisplayInfo(label="Enabled", desc="Hub/mirror nodes only: connect as the command "
+            + "RECEIVER on control streams and publish each submitted command to its "
+            + "':commands:data' / ':commands:data.json' subjects immediately, so an external relay "
+            + "(e.g. the OSHConnect broker) can forward it to the source node. Commands are then "
+            + "recorded in the write database and auto-acknowledged PENDING. Only one command "
+            + "receiver may connect per stream, so on nodes with local drivers scope this with "
+            + "'Relay Only System UIDs' or leave it disabled (driver-backed streams fall back to "
+            + "the status-triggered echo, but only if the driver connects first).")
+        public boolean enabled = false;
+
+
+        @DisplayInfo(label="Relay Only System UIDs", desc="Glob patterns matched against a "
+            + "control stream's parent system UID ('*' is the only wildcard; every other "
+            + "character is literal) to decide PER STREAM whether to connect as the command "
+            + "receiver (relay) or use the observe-only echo. EMPTY = RELAY EVERY CONTROL "
+            + "STREAM. Lets a dual-role node (local drivers + mirrored systems) relay only the "
+            + "mirrored streams while driver-backed streams keep their drivers as the receiver.")
+        public List<String> onlySystemUids = new ArrayList<>();
+    }
+
+
+    /**
+     * <p>
+     * Settings that apply only in {@link DataStreamingMode#ON_DEMAND} mode
+     * (ignored, with a warning at init, in PROACTIVE mode).
+     * </p>
+     */
+    public static class OnDemandConfig
+    {
+        @DisplayInfo(label="Lease (seconds)", desc="How long a client's stream subscription "
+            + "stays alive without renewal. Clients renew by re-sending the same control-channel "
+            + "subscribe request (the subscribe reply carries this value as 'leaseSeconds'). "
+            + "Prevents streams leaking forever when a client dies without unsubscribing. "
+            + "0 = leases never expire (explicit unsubscribe required).")
+        public int leaseSeconds = 300;
+    }
 
 
     /**

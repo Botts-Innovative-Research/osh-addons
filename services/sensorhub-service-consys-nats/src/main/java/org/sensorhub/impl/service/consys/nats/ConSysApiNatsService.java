@@ -15,12 +15,12 @@ Copyright (C) 2026 Sensia Software LLC. All Rights Reserved.
 package org.sensorhub.impl.service.consys.nats;
 
 import java.time.Duration;
-import java.util.List;
 import java.util.concurrent.TimeUnit;
 import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.api.database.IObsSystemDatabase;
 import org.sensorhub.api.module.ModuleEvent.ModuleState;
 import org.sensorhub.api.service.IServiceModule;
+import org.sensorhub.api.system.ISystemDriver;
 import org.sensorhub.impl.module.AbstractModule;
 import org.sensorhub.impl.service.consys.ConSysApiService;
 import org.sensorhub.impl.service.consys.nats.ConSysApiNatsServiceConfig.DataStreamingMode;
@@ -61,14 +61,43 @@ public class ConSysApiNatsService extends AbstractModule<ConSysApiNatsServiceCon
 
 
     @Override
+    protected void doInit() throws SensorHubException
+    {
+        validateConfig(true);
+    }
+
+
+    /**
+     * Validate the whole config in one pass; log every warning (if asked) and
+     * fail with ONE exception carrying every error, so a broken config is
+     * fixed in a single round-trip. Also normalizes null nested blocks, so
+     * code past this point needs no null guards on them.
+     */
+    protected void validateConfig(boolean logWarnings) throws SensorHubException
+    {
+        var result = ConSysApiNatsConfigValidator.validate(config);
+        if (logWarnings)
+        {
+            for (var warning : result.warnings)
+                getLogger().warn(warning);
+        }
+        if (!result.errors.isEmpty())
+            throw new SensorHubException("Invalid configuration:\n - " + String.join("\n - ", result.errors));
+    }
+
+
+    @Override
     protected void doStart() throws SensorHubException
     {
+        // defensive re-check: a config update can reach start without re-init
+        validateConfig(false);
+
         // we finish startup asynchronously once attached to the CS API service
         startAsync = true;
         reportStatus("Connecting to NATS server...");
 
         // 1. connect to the NATS server as a client
-        var serverUrl = config.serverUrl;
+        var serverUrl = config.server.url;
         try
         {
             natsConnection = connect(serverUrl);
@@ -80,7 +109,7 @@ public class ConSysApiNatsService extends AbstractModule<ConSysApiNatsServiceCon
         }
 
         // optionally set up JetStream persistence for this node's subjects
-        if (config.jetStream != null && config.jetStream.enabled)
+        if (config.jetStream.enabled)
             ensureJetStreamStream();
 
         // 2. attach to the CONSYS API REST service, then register handler + publishers
@@ -99,8 +128,8 @@ public class ConSysApiNatsService extends AbstractModule<ConSysApiNatsServiceCon
                     // Inbound handler: ingest + (ON_DEMAND) flow-control control channel;
                     // db + idEncoders enable fingerprint-idempotent obs ingest
                     connector = new ConSysApiNatsConnector(
-                        servlet, natsConnection, config.nodeId, config.username,
-                        config.dataStreamingMode, config.onDemandLeaseSeconds,
+                        servlet, natsConnection, config.nodeId, config.actingUser,
+                        config.dataStreamingMode, config.onDemand.leaseSeconds,
                         db, idEncoders, originNode);
                     connector.start();
 
@@ -113,16 +142,33 @@ public class ConSysApiNatsService extends AbstractModule<ConSysApiNatsServiceCon
                     // Proactive Resource Data publisher (PROACTIVE mode only)
                     if (config.dataStreamingMode == DataStreamingMode.PROACTIVE)
                     {
-                        var formatTokens = config.proactiveDataFormats == null ? List.<String>of() :
-                            config.proactiveDataFormats.stream().filter(f -> f != null).map(f -> f.token).toList();
+                        var proactive = config.proactive;
+                        var commandRelay = proactive.commandRelay;
+                        var formatTokens = proactive.dataFormats.stream()
+                            .filter(f -> f != null).map(f -> f.token).toList();
 
                         // Command relay mode needs the CS API's WRITE database (same resolution
                         // as ConSysApiService.doStart): connecting as a command receiver records
                         // each command via the transaction handler, which the read-only federated
                         // view can't do.
                         IObsSystemDatabase relayWriteDb = null;
-                        if (config.commandRelayMode)
+                        if (commandRelay.enabled)
                         {
+                            // an unscoped relay on a node with local drivers competes with each
+                            // driver for its stream's single command-receiver slot
+                            if (commandRelay.onlySystemUids.isEmpty())
+                            {
+                                var driverNames = getParentHub().getModuleRegistry().getLoadedModules().stream()
+                                    .filter(m -> m instanceof ISystemDriver)
+                                    .map(m -> m.getName())
+                                    .toList();
+                                if (!driverNames.isEmpty())
+                                    getLogger().warn("Command relay is enabled for ALL control streams but this "
+                                        + "node runs local driver(s) {} — the relay would fight each driver for "
+                                        + "its stream's single command-receiver slot; scope it with "
+                                        + "proactive.commandRelay.onlySystemUids", driverNames);
+                            }
+
                             var csApiConfig = service.getConfiguration();
                             if (csApiConfig.databaseID != null && !csApiConfig.databaseID.isBlank())
                             {
@@ -134,26 +180,28 @@ public class ConSysApiNatsService extends AbstractModule<ConSysApiNatsServiceCon
                             else
                                 relayWriteDb = getParentHub().getSystemDriverRegistry().getSystemStateDatabase();
                             if (relayWriteDb == null)
+                            {
                                 getLogger().warn("Command relay mode is on but no write database "
                                     + "could be resolved — falling back to status-triggered command echo");
+                                reportStatus("Command relay inactive (no write database) — using command echo");
+                            }
                         }
 
                         resourceDataPublisher = new ResourceDataPublisher(
                             servlet, natsConnection, config.nodeId, eventBus, db, idEncoders,
-                            config.username, formatTokens, relayWriteDb,
-                            config.commandRelayUidPatterns,
-                            config.proactiveDataUidExcludePatterns, originNode, getLogger());
+                            config.actingUser, formatTokens, relayWriteDb,
+                            commandRelay.onlySystemUids,
+                            proactive.excludeSystemUids, originNode, getLogger());
                         resourceDataPublisher.start();
                         getLogger().info("CONSYS API NATS resource-data publisher started (PROACTIVE, formats={}{})",
-                            config.proactiveDataFormats != null && !config.proactiveDataFormats.isEmpty()
-                                ? config.proactiveDataFormats : "server-default",
+                            !proactive.dataFormats.isEmpty() ? proactive.dataFormats : "server-default",
                             (relayWriteDb != null
-                                ? (config.commandRelayUidPatterns == null || config.commandRelayUidPatterns.isEmpty()
+                                ? (commandRelay.onlySystemUids.isEmpty()
                                     ? ", command relay ON (all streams)"
-                                    : ", command relay ON (UIDs " + config.commandRelayUidPatterns + ")")
+                                    : ", command relay ON (UIDs " + commandRelay.onlySystemUids + ")")
                                 : "")
-                            + (config.proactiveDataUidExcludePatterns != null && !config.proactiveDataUidExcludePatterns.isEmpty()
-                                ? ", obs publish excluded for UIDs " + config.proactiveDataUidExcludePatterns
+                            + (!proactive.excludeSystemUids.isEmpty()
+                                ? ", obs publish excluded for UIDs " + proactive.excludeSystemUids
                                 : ""));
                     }
                     else
@@ -166,7 +214,7 @@ public class ConSysApiNatsService extends AbstractModule<ConSysApiNatsServiceCon
                     clearStatus();
 
                     // prove messages are actually landing in JetStream
-                    if (config.jetStream != null && config.jetStream.enabled)
+                    if (config.jetStream.enabled)
                         scheduleJetStreamCheck();
                 }
                 catch (Exception e)
@@ -187,20 +235,23 @@ public class ConSysApiNatsService extends AbstractModule<ConSysApiNatsServiceCon
 
     protected Connection connect(String serverUrl) throws Exception
     {
+        var server = config.server;
         var builder = new Options.Builder()
             .server(serverUrl)
             .connectionName("osh-consys-nats")
-            .connectionTimeout(Duration.ofMillis(config.connectionTimeoutMs))
-            .maxReconnects(config.maxReconnects);
+            .connectionTimeout(Duration.ofSeconds(server.connectTimeoutSeconds))
+            // always reconnect: a transport binding that stops retrying is silently dead
+            .maxReconnects(-1);
 
-        if (config.token != null && !config.token.isBlank())
+        // token XOR username/password — enforced by config validation
+        if (server.authToken != null && !server.authToken.isBlank())
         {
-            builder.token(config.token.toCharArray());
+            builder.token(server.authToken.toCharArray());
         }
-        else if (config.username != null && !config.username.isBlank())
+        else if (server.username != null && !server.username.isBlank())
         {
-            var pwd = config.password != null ? config.password.toCharArray() : new char[0];
-            builder.userInfo(config.username.toCharArray(), pwd);
+            var pwd = server.password != null ? server.password.toCharArray() : new char[0];
+            builder.userInfo(server.username.toCharArray(), pwd);
         }
 
         return Nats.connect(builder.build());
@@ -231,6 +282,10 @@ public class ConSysApiNatsService extends AbstractModule<ConSysApiNatsServiceCon
      */
     protected String resolveOriginNodeUuid()
     {
+        // config fallback is pre-validated as a UUID (or blank) at init
+        var configUuid = config.originNodeUuid != null && !config.originNodeUuid.isBlank()
+            ? java.util.UUID.fromString(config.originNodeUuid.trim()).toString() : null;
+
         try
         {
             var hubConfig = getParentHub().getConfig();
@@ -240,8 +295,12 @@ public class ConSysApiNatsService extends AbstractModule<ConSysApiNatsServiceCon
                 var file = new java.io.File(dataPath, "node-uuid");
                 if (file.isFile())
                 {
-                    var uuid = java.nio.file.Files.readString(file.toPath()).trim();
-                    return java.util.UUID.fromString(uuid).toString();
+                    var fileUuid = java.util.UUID.fromString(
+                        java.nio.file.Files.readString(file.toPath()).trim()).toString();
+                    if (configUuid != null && !configUuid.equals(fileUuid))
+                        getLogger().warn("Node identity file {} ({}) overrides configured originNodeUuid ({})",
+                            file, fileUuid, configUuid);
+                    return fileUuid;
                 }
             }
         }
@@ -250,17 +309,8 @@ public class ConSysApiNatsService extends AbstractModule<ConSysApiNatsServiceCon
             getLogger().warn("Cannot read node identity file: {}", e.getMessage());
         }
 
-        if (config.originNodeUuid != null && !config.originNodeUuid.isBlank())
-        {
-            try
-            {
-                return java.util.UUID.fromString(config.originNodeUuid.trim()).toString();
-            }
-            catch (IllegalArgumentException e)
-            {
-                getLogger().warn("Invalid originNodeUuid '{}' — ignoring", config.originNodeUuid);
-            }
-        }
+        if (configUuid != null)
+            return configUuid;
 
         getLogger().warn("No node identity — CS-Origin-Node header omitted and provenance-based "
             + "self-drop disabled (load the nodehealth driver or set originNodeUuid)");
@@ -314,6 +364,7 @@ public class ConSysApiNatsService extends AbstractModule<ConSysApiNatsServiceCon
             getLogger().warn("Could not set up JetStream stream '{}' — is the NATS server running "
                 + "with JetStream enabled (nats-server -js)? Continuing without persistence. Cause: {}",
                 js.streamName, e.getMessage());
+            reportStatus("JetStream unavailable — running without persistence");
         }
     }
 
