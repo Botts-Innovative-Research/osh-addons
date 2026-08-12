@@ -32,6 +32,7 @@ import org.sensorhub.api.common.IdEncoders;
 import org.sensorhub.api.database.IObsSystemDatabase;
 import org.sensorhub.api.datastore.obs.DataStreamKey;
 import org.sensorhub.impl.service.consys.ConSysApiServlet;
+import org.sensorhub.impl.service.consys.nats.ingest.IngestedCommandMemory;
 import org.sensorhub.impl.service.consys.nats.ingest.ObsFingerprint;
 import org.sensorhub.impl.service.consys.InvalidRequestException;
 import org.sensorhub.impl.service.consys.resource.RequestContext;
@@ -296,6 +297,11 @@ public class ConSysApiNatsConnector
             // so the proactive publisher's egress check sees it
             if (fp != null)
                 fingerprint.markIngested(fp.dsId(), fp.timeMs());
+            // ingested commands are marked BEFORE the POST too: the relay-mode
+            // publisher must not republish a command that arrived over the
+            // broker (the external relay would forward it back to the source
+            // and double-task the driver)
+            var cmdMark = markIngestedCommand(subject, msg.getData());
             try
             {
                 servlet.getRootHandler().doPost(ctx);
@@ -304,6 +310,8 @@ public class ConSysApiNatsConnector
             {
                 if (fp != null)
                     fingerprint.unmarkIngested(fp.dsId(), fp.timeMs());
+                if (cmdMark != null)
+                    IngestedCommandMemory.unmark(cmdMark.csId(), cmdMark.timeMs());
                 throw e;
             }
             replyOk(msg);
@@ -337,6 +345,47 @@ public class ConSysApiNatsConnector
     /** Result of an obs-fingerprint check: the resolved fingerprint + whether
      *  it is already present (null overall = not applicable / fail open). */
     record FpCheck(BigId dsId, long timeMs, boolean duplicate) {}
+
+
+    /** Identity of an ingested command marked in {@link IngestedCommandMemory}
+     *  (null overall = not a command publish / no issueTime / fail open). */
+    record CmdMark(BigId csId, long timeMs) {}
+
+
+    /**
+     * If this publish is a command carrying an explicit {@code issueTime},
+     * mark its identity (control stream, issueTime@ms) so the relay-mode
+     * publisher skips republishing it (ingest is terminal — the relay that
+     * delivered it has already seen it). Fails open: any parse or decode
+     * failure returns null and the command is republished as before.
+     */
+    CmdMark markIngestedCommand(String subject, byte[] payload)
+    {
+        try
+        {
+            // command data subjects only:
+            // {nodeId}.systems.{sys}.controlstreams.{cs}.commands:data[.fmt]
+            var tokens = subject.split("\\.");
+            if (tokens.length < 6
+                || !"systems".equals(tokens[1])
+                || !"controlstreams".equals(tokens[3])
+                || !tokens[5].startsWith("commands" + ConSysSubjectValidator.DATA_SUFFIX))
+                return null;
+
+            var timeMs = IngestedCommandMemory.extractIssueTimeMs(payload);
+            if (timeMs == null)
+                return null;
+
+            var csId = idEncoders.getCommandStreamIdEncoder().decodeID(tokens[4]);
+            IngestedCommandMemory.mark(csId, timeMs);
+            return new CmdMark(csId, timeMs);
+        }
+        catch (Exception e)
+        {
+            log.debug("Command ingest-marking skipped on {}: {}", subject, e.getMessage());
+            return null;
+        }
+    }
 
 
     /**

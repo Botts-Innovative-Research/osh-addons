@@ -45,6 +45,7 @@ import org.sensorhub.api.event.EventUtils;
 import org.sensorhub.api.event.IEventBus;
 import org.sensorhub.impl.system.SystemDatabaseTransactionHandler;
 import org.sensorhub.impl.service.consys.ConSysApiServlet;
+import org.sensorhub.impl.service.consys.nats.ingest.IngestedCommandMemory;
 import org.sensorhub.impl.service.consys.nats.ingest.ObsFingerprint;
 import org.sensorhub.impl.service.consys.task.CommandBindingJson;
 import org.sensorhub.impl.service.consys.task.CommandHandler;
@@ -744,6 +745,20 @@ public class ResourceDataPublisher
                     {
                         // ID was assigned by the receiver wrapper (store-add) before delivery
                         var cmd = event.getCommand();
+
+                        // ingest is terminal for commands: one that arrived over
+                        // NATS is already on the broker, and republishing it would
+                        // hand it back to the external relay -> forwarded to the
+                        // source again -> double-tasked driver
+                        var issueTime = cmd.getIssueTime();
+                        if (issueTime != null
+                            && IngestedCommandMemory.wasIngested(csInternalId, issueTime.toEpochMilli()))
+                        {
+                            log.debug("Ingested command on {} (issueTime {}) — already on the broker, not republished",
+                                resourcePath, issueTime);
+                            return;
+                        }
+
                         binding.serialize(cmd.getID(), cmd, false);
                         natsHandler.sendPacket(event.getCorrelationID());
                     }
