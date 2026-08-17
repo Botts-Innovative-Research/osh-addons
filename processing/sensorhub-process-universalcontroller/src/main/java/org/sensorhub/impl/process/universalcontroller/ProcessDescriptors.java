@@ -24,6 +24,7 @@ public class ProcessDescriptors extends AbstractProcessProvider
     {
         addImpl(PrimaryControllerSelector.INFO);
         addImpl(ControllerPTZProcess.INFO);
+        addImpl(ControllerMAVLinkProcess.INFO);
     }
 
 }
