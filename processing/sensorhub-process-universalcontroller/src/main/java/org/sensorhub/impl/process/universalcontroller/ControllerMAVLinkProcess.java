@@ -13,10 +13,10 @@ public class ControllerMAVLinkProcess extends AbstractControllerTaskingProcess {
 
     DataRecord bodyVelocity;
 
-    DataRecord landing;
-    DataRecord rtl;
-    DataRecord takeoff;
-    DataComponent takeoffAltitudeParam;
+//    DataRecord landing;
+//    DataRecord rtl;
+//    DataRecord takeoff;
+//    DataComponent takeoffAltitudeParam;
 
 
     public static final OSHProcessInfo INFO = new OSHProcessInfo(
@@ -29,26 +29,6 @@ public class ControllerMAVLinkProcess extends AbstractControllerTaskingProcess {
         super(INFO);
 
         GeoPosHelper geo = new GeoPosHelper();
-
-//        paramData.add("altitude", takeoffAltitudeParam = fac.createQuantity().dataType(DataType.DOUBLE).uom("m").definition(SWEHelper.getPropertyUri("AltitudeAGL")).build());
-
-//        outputData.add("landing", landing = geo.createRecord()
-//                .definition(SWEHelper.getPropertyUri("Control"))
-//                .addField("disarm", geo.createBoolean()
-//                        .definition(SWEHelper.getPropertyUri("Disarm")))
-//                .build());
-//
-//        outputData.add("takeoff", takeoff = geo.createRecord()
-//                .definition(SWEHelper.getPropertyUri("Control"))
-//                .addField("TakeoffAltitudeAGL", geo.createQuantity()
-//                        .definition(GeoPosHelper.DEF_ALTITUDE_GROUND))
-//                .build());
-//
-//        outputData.add("rtl", rtl = geo.createRecord()
-//                .definition(SWEHelper.getPropertyUri("Control"))
-//                .addField("rtl", geo.createBoolean()
-//                        .definition(SWEHelper.getPropertyUri("rtl")))
-//                .build());
 
         outputData.add("bodyVelocity", bodyVelocity = geo.createRecord()
                 .addField("velocity", geo.newVelocityVectorNED(
@@ -64,6 +44,19 @@ public class ControllerMAVLinkProcess extends AbstractControllerTaskingProcess {
         paramData.getComponent(0).getData().setIntValue(0);
     }
 
+    /**
+     * x: right joystick up
+     * y: right joystick
+     * z: left joystick
+     * yaw: left joystick
+     */
+
+    /**
+     *  UP/DOWN are flipped and on left joystick
+     *  LEFT/RIGHT are flipped on left joystick
+     *  right joy stick doesnt work
+     *
+     */
     @Override
     public void updateOutputs() throws ProcessException {
         // x-y velocity
@@ -88,44 +81,20 @@ public class ControllerMAVLinkProcess extends AbstractControllerTaskingProcess {
 
         float currentX = fac.getComponentValueInput(UniversalControllerComponent.X_AXIS);
         float currentY = fac.getComponentValueInput(UniversalControllerComponent.Y_AXIS);
-        float currentRX = fac.getComponentValueInput(UniversalControllerComponent.RX_AXIS);
-        float currentRY = fac.getComponentValueInput(UniversalControllerComponent.RY_AXIS);
+        float currentZ = fac.getComponentValueInput(UniversalControllerComponent.Z_AXIS);
+        float currentRZ = fac.getComponentValueInput(UniversalControllerComponent.RZ_AXIS);
 
-        float sensitivity = 1.5f;
-
-//        boolean isAPressed = fac.getComponentValueInput(UniversalControllerComponent.A_BUTTON) == 1.0f;
-//        boolean isBPressed = fac.getComponentValueInput(UniversalControllerComponent.B_BUTTON) == 1.0f;
-//        boolean isXPressed = fac.getComponentValueInput(UniversalControllerComponent.X_BUTTON) == 1.0f;
-
-
-//        // Takeoff
-//        if(isAPressed) {
-//            takeoffAltitudeParam.getData().setFloatValue(5.0f);
-//        } else {
-//            takeoffAltitudeParam.getData().setFloatValue(0.0f);
-//        }
-
-
-//        // Land
-//        if(isBPressed) {
-//            landing.getData().setBooleanValue(true);
-//        } else {
-//            landing.getData().setBooleanValue(false);
-//        }
-//
-//        // RTL
-//        if(isXPressed) {
-//            rtl.getData().setBooleanValue(true);
-//        } else {
-//            rtl.getData().setBooleanValue(false);
-//        }
+        float sensitivity = 5.0f;
+        float yawSensitivity = 100.0f;
 
         // Velocity
         // TODO: Add sensitivity modifiers
-        bodyVelocity.getData().setFloatValue(0, currentY  * sensitivity);
-        bodyVelocity.getData().setFloatValue(1, currentX * sensitivity);
-        bodyVelocity.getData().setFloatValue(2, currentRY * sensitivity);
+        bodyVelocity.getData().setFloatValue(0, -currentRZ  * sensitivity);
+        bodyVelocity.getData().setFloatValue(1, currentZ * sensitivity);
+
+        bodyVelocity.getData().setFloatValue(2, currentY * sensitivity);
         // Yaw rate
-        bodyVelocity.getData().setFloatValue(3, currentRX * sensitivity);
+        bodyVelocity.getData().setFloatValue(3, currentX * yawSensitivity);
     }
 }
+

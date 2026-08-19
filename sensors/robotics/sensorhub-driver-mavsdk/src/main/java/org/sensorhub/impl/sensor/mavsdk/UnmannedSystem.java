@@ -335,6 +335,7 @@ public class UnmannedSystem extends AbstractSensorModule<org.sensorhub.impl.sens
                     unmannedControlRTL.setSystem(drone);
                     unmannedControlShell.setSystem(drone);
                     unmannedControlFlightMode.setSystem(drone);
+                    unmannedControlOffboard.setSystem(drone);
                     unmannedControlPauseMission.setSystem(drone);
                     unmannedControlDriveToLocation.setSystem(drone);
                     unmannedControlDriveVelocity.setSystem(drone);
