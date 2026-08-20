@@ -8,7 +8,9 @@ dependencies {
     implementation 'org.sensorhub:sensorhub-core:' + oshCoreVersion
     implementation project(':sensorhub-driver-videocam')
     implementation project(':sensorhub-process-ffmpeg')
-    implementation project(':sensorhub-lib-stanag4609')
+    embeddedImpl (project(':sensorhub-lib-stanag4609')) {
+        transitive = false
+    }
     testImplementation('junit:junit:4.13')
     testImplementation('org.jcodec:jcodec-javase:0.1.9')
 }
