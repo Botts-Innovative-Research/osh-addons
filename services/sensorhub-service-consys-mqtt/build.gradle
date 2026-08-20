@@ -1,11 +1,13 @@
 description = 'Connected Systems API MQTT Extension'
 ext.details = 'MQTT Extension for OGC API Connected Systems'
+version = '1.1.0'
 
 
 dependencies {
   implementation 'org.sensorhub:sensorhub-core:' + oshCoreVersion
   implementation 'org.sensorhub:sensorhub-service-consys:' + oshCoreVersion
   implementation project(':sensorhub-comm-mqtt')
+  implementation project(':sensorhub-service-video')
 }
 
 // add info to OSGI manifest
@@ -24,6 +26,12 @@ ext.pom >>= {
       name 'Alex Robin'
       organization 'Sensia Software LLC'
       organizationUrl 'http://www.sensiasoftware.com'
+    }
+    developer {
+      id 'tipatterson-dev'
+      name 'Ian Patterson'
+      organization 'GeoRobotix Innovative Research'
+      organizationUrl 'https://georobotix.us'
     }
   }
 }

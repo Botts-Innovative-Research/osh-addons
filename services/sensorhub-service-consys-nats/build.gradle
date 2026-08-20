@@ -1,0 +1,43 @@
+plugins {
+  id 'java'
+}
+
+description = 'Connected Systems API NATS Extension'
+version = '0.1.1'
+ext.details = 'NATS transport binding for OGC API - Connected Systems (Part 3 Pub/Sub)'
+
+
+dependencies {
+  implementation 'org.sensorhub:sensorhub-core:' + oshCoreVersion
+  implementation 'org.sensorhub:sensorhub-service-consys:' + oshCoreVersion
+
+  // NATS Java client; embeddedImpl bundles the jar into the OSGi bundle
+  // (same convention as sensorhub-service-consys-proto's protobuf-java).
+  embeddedImpl 'io.nats:jnats:2.25.3'
+
+  testImplementation 'junit:junit:4.13.1'
+  testImplementation 'org.mockito:mockito-core:5.14.2'
+}
+
+test {
+  useJUnit()
+}
+
+// bundle the module readme so the admin UI can display it
+tasks.register('copyReadme', Copy) {
+    from "${projectDir}/README.md"
+    into "${projectDir}/src/main/resources/org/sensorhub/impl/service/consys/nats"
+    onlyIf { file("${projectDir}/README.md").exists() }
+}
+
+processResources {
+    dependsOn copyReadme
+}
+
+// add info to OSGI manifest
+osgi {
+  manifest {
+    attributes('Bundle-Vendor': 'GeoRobotix Innovative Research')
+    attributes('Bundle-Activator': 'org.sensorhub.impl.service.consys.nats.Activator')
+  }
+}

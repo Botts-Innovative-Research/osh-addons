@@ -66,7 +66,7 @@ public class UnmannedControlOffboard extends AbstractSensorControl<UnmannedSyste
     static double deltaSuccess =   0.000003; //distance from lat/lon to determine success
 
     public UnmannedControlOffboard(UnmannedSystem parentSensor) {
-        super("offboardControl", parentSensor);
+        super(SENSOR_CONTROL_NAME, parentSensor);
     }
 
 
@@ -82,6 +82,7 @@ public class UnmannedControlOffboard extends AbstractSensorControl<UnmannedSyste
                     .doOnComplete(() -> log.debug("Started offboard control"))
                     .doOnError(throwable -> throwable.printStackTrace());
     }
+
 
     public void init() {
         GeoPosHelper factory = new GeoPosHelper();
