@@ -60,6 +60,9 @@ When added to an OpenSensorHub node, the driver has the following configuration 
     - **Inject Extradata:**
       Only for H264. When checked, injects Annex B extradata into the video stream before every keyframe. 
       This is necessary for late-join decoders (those that receive live data from the driver after the driver has started).
+    - **Register Devices:**
+      Register external A/V device libraries. Enable if input is not from a network stream or file (e.g. Direct Show, V4L).
+      Disable this option if the driver fails to start and produces the error `java.lang.UnsatisfiedLinkError: no jniavdevice in java.library.path`.
 
 - **Position:**
     - **Location:** (Optional)
