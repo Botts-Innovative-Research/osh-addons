@@ -1,0 +1,18 @@
+description = 'Reticulum Network Reticulum communication driver for OpenSensorHub'
+ext.details = 'Reticulum RNS/LXMF/LXST network adapter with deterministic no-hardware fixture runtime'
+
+dependencies {
+  implementation 'org.sensorhub:sensorhub-core:' + oshCoreVersion
+  testImplementation 'junit:junit:4.13.2'
+}
+
+test {
+  useJUnit()
+}
+
+osgi {
+  manifest {
+    attributes('Bundle-Vendor': 'Botts Innovative Research')
+    attributes('Bundle-Activator': 'org.sensorhub.impl.comm.reticulum.Activator')
+  }
+}
