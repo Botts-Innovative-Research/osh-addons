@@ -1,0 +1,42 @@
+{
+  "wheelhouse-availability": true,
+  "checkedFor": "cp312",
+  "packages": ["numpy", "pycodec2", "cffi", "pycparser"],
+  "platforms": [
+    {
+      "id": "linux-x86_64",
+      "pipPlatforms": ["manylinux_2_28_x86_64", "manylinux_2_27_x86_64", "manylinux2014_x86_64", "manylinux_2_17_x86_64"],
+      "pins": {"numpy": "2.3.4", "pycodec2": "4.1.1", "cffi": "2.0.0"},
+      "binaryWheelsAvailable": true
+    },
+    {
+      "id": "linux-aarch64",
+      "pipPlatforms": ["manylinux_2_28_aarch64", "manylinux_2_27_aarch64", "manylinux2014_aarch64", "manylinux_2_17_aarch64"],
+      "pins": {"numpy": "2.3.4", "pycodec2": "4.1.1", "cffi": "2.0.0"},
+      "binaryWheelsAvailable": true
+    },
+    {
+      "id": "macos-aarch64",
+      "pipPlatforms": ["macosx_11_0_arm64"],
+      "pins": {"numpy": "2.3.4", "pycodec2": "4.1.1", "cffi": "2.0.0"},
+      "binaryWheelsAvailable": true
+    },
+    {
+      "id": "macos-x86_64",
+      "pipPlatforms": ["macosx_11_0_x86_64"],
+      "pins": {"numpy": "2.3.4", "pycodec2": "4.1.0", "cffi": "2.0.0"},
+      "binaryWheelsAvailable": true
+    },
+    {
+      "id": "windows-x86_64",
+      "pipPlatforms": ["win_amd64"],
+      "pins": {"numpy": "2.3.4", "pycodec2": "4.1.1", "cffi": "2.0.0"},
+      "binaryWheelsAvailable": true
+    }
+  ],
+  "notes": [
+    "No single exact pycodec2 wheel version covers all target platforms.",
+    "macos-x86_64 uses pycodec2 4.1.0 while other target platforms use pycodec2 4.1.1.",
+    "Interpreter distribution remains separate from wheelhouse availability."
+  ]
+}

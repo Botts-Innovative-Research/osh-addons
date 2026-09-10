@@ -8,7 +8,8 @@
   },
   "pythonPackages": [
     {"name": "numpy", "version": "2.3.4", "reason": "LXST audio/frame arrays"},
-    {"name": "pycodec2", "version": "4.1.0", "reason": "LXST Codec2 voice codec"},
+    {"name": "pycodec2", "version": "4.1.1", "platforms": ["linux-x86_64", "linux-aarch64", "macos-aarch64", "windows-x86_64"], "reason": "LXST Codec2 voice codec"},
+    {"name": "pycodec2", "version": "4.1.0", "platforms": ["macos-x86_64"], "reason": "LXST Codec2 voice codec; latest binary wheel available for Intel macOS at verification time"},
     {"name": "cffi", "version": "2.0.0", "reason": "LXST platform audio FFI"},
     {"name": "audioop-lts", "version": "0.2.1", "marker": "python_version >= '3.13'", "reason": "audioop compatibility for Python 3.13+"}
   ],
