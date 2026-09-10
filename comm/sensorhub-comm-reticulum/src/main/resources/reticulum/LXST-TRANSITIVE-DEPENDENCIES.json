@@ -1,0 +1,14 @@
+{
+  "component": "LXST",
+  "source": "https://github.com/markqvist/lxst",
+  "commit": "1194c9011fe6402edc7aebe7ffe9650ea3b1afee",
+  "runtimeDependencies": [
+    {"name": "rns", "satisfiedBy": "reticulum/vendor/Reticulum"},
+    {"name": "lxmf", "satisfiedBy": "reticulum/vendor/LXMF"},
+    {"name": "numpy", "satisfiedBy": "not-yet-vendored"},
+    {"name": "pycodec2", "satisfiedBy": "not-yet-vendored"},
+    {"name": "cffi", "satisfiedBy": "not-yet-vendored"},
+    {"name": "audioop-lts", "satisfiedBy": "conditional-python-3.13-plus-not-yet-vendored"}
+  ],
+  "status": "RNS and LXMF import smoke can run from staged vendored source; full LXST import remains blocked until these transitive dependencies are embedded or LXST usage is narrowed to modules that do not import them."
+}

@@ -58,5 +58,10 @@ public class ReticulumNetworkConfigTest
         assertTrue(Files.isRegularFile(stagedRoot.resolve("reticulum/vendor/LXMF/LXMF/LXMRouter.py")));
         assertTrue(Files.isRegularFile(stagedRoot.resolve("reticulum/vendor/lxst/LXST/Network.py")));
         assertTrue(runtime.reticulumPythonPath(stagedRoot).contains("vendor"));
+        ReticulumNetworkEmbeddedRuntime.ImportProbeResult probe = runtime.runEmbeddedImportSmoke(stagedRoot, "python3");
+        assertEquals("SCENARIO-RETICULUM-EMBEDDED-IMPORT staged vendored RNS LXMF import", 0, probe.exitCode);
+        assertTrue(probe.stdout, probe.stdout.contains("\"RNS\": {\"ok\": true, \"version\": \"1.5.2\""));
+        assertTrue(probe.stdout, probe.stdout.contains("\"LXMF\": {\"ok\": true, \"version\": \"1.1.0\""));
+        assertTrue(probe.stdout, probe.stdout.contains("\"LXST\": {\"error\": \"ModuleNotFoundError\""));
     }
 }

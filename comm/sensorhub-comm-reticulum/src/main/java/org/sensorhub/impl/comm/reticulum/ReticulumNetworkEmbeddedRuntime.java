@@ -8,9 +8,11 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.time.Duration;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 public class ReticulumNetworkEmbeddedRuntime
@@ -74,6 +76,55 @@ public class ReticulumNetworkEmbeddedRuntime
             + stagedRuntimeRoot.resolve("reticulum/vendor/LXMF").toString()
             + java.io.File.pathSeparator
             + stagedRuntimeRoot.resolve("reticulum/vendor/lxst").toString();
+    }
+
+    public ImportProbeResult runEmbeddedImportSmoke(Path stagedRuntimeRoot, String pythonExecutable)
+        throws IOException, InterruptedException
+    {
+        String script = ""
+            + "import json, importlib\n"
+            + "results = {}\n"
+            + "for mod in ['RNS','LXMF']:\n"
+            + "    try:\n"
+            + "        m = importlib.import_module(mod)\n"
+            + "        results[mod] = {'ok': True, 'version': getattr(m, '__version__', None)}\n"
+            + "    except Exception as e:\n"
+            + "        results[mod] = {'ok': False, 'error': type(e).__name__, 'message': str(e)}\n"
+            + "try:\n"
+            + "    importlib.import_module('LXST')\n"
+            + "    results['LXST'] = {'ok': True}\n"
+            + "except Exception as e:\n"
+            + "    results['LXST'] = {'ok': False, 'error': type(e).__name__, 'message': str(e)}\n"
+            + "print(json.dumps(results, sort_keys=True))\n";
+        ProcessBuilder builder = new ProcessBuilder(pythonExecutable, "-c", script);
+        Map<String, String> environment = builder.environment();
+        environment.put("PYTHONPATH", reticulumPythonPath(stagedRuntimeRoot));
+        environment.put("PYTHONNOUSERSITE", "1");
+        environment.remove("PYTHONHOME");
+        Process process = builder.start();
+        boolean finished = process.waitFor(Duration.ofSeconds(20).toMillis(), java.util.concurrent.TimeUnit.MILLISECONDS);
+        if (!finished)
+        {
+            process.destroyForcibly();
+            throw new IOException("Embedded import smoke timed out");
+        }
+        String stdout = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+        String stderr = new String(process.getErrorStream().readAllBytes(), StandardCharsets.UTF_8);
+        return new ImportProbeResult(process.exitValue(), stdout, stderr);
+    }
+
+    public static class ImportProbeResult
+    {
+        public final int exitCode;
+        public final String stdout;
+        public final String stderr;
+
+        public ImportProbeResult(int exitCode, String stdout, String stderr)
+        {
+            this.exitCode = exitCode;
+            this.stdout = stdout;
+            this.stderr = stderr;
+        }
     }
 
     public String describe()
