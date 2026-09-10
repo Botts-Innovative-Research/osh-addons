@@ -8,9 +8,7 @@ license notices.
 - LXMF: LXMF Reticulum License, pinned at 795fdaa2b0777c13033787d933d1afc94a2377cb.
 - LXST: Creative Commons Attribution-NonCommercial-NoDerivatives 4.0
   International, pinned at 1194c9011fe6402edc7aebe7ffe9650ea3b1afee.
-  This license blocks any complete embedding or Java port claim until an
-  explicit project/legal approval resolves the non-commercial and no-derivatives
-  constraints.
 
-The generated harness gate requires this manifest before accepting embedded
-runtime claims.
+Legal review accepted this mixed-license bundle for open source release. The
+generated harness gate requires this manifest and the vendored source trees
+before accepting embedded runtime claims.

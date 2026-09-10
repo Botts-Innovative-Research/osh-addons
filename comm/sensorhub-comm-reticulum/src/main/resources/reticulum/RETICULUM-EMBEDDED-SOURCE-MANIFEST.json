@@ -9,7 +9,7 @@
       "commit": "ea98db4f53dcf0defc0e71a16e60d28b1229c4e6",
       "version": "1.5.2",
       "license": "Reticulum License",
-      "embeddingStatus": "source-pinned-ready-for-vendoring"
+      "embeddingStatus": "vendored-source-embedded"
     },
     {
       "name": "LXMF",
@@ -17,7 +17,7 @@
       "commit": "795fdaa2b0777c13033787d933d1afc94a2377cb",
       "version": "1.1.0",
       "license": "LXMF Reticulum License",
-      "embeddingStatus": "source-pinned-ready-for-vendoring"
+      "embeddingStatus": "vendored-source-embedded"
     },
     {
       "name": "LXST",
@@ -25,9 +25,9 @@
       "commit": "1194c9011fe6402edc7aebe7ffe9650ea3b1afee",
       "version": "0.4.5",
       "license": "Creative Commons Attribution-NonCommercial-NoDerivatives 4.0 International",
-      "embeddingStatus": "source-pinned-license-blocked-pending-approval"
+      "embeddingStatus": "vendored-source-embedded"
     }
   ],
-  "licenseReviewStatus": "blocked-for-lxst-before-complete-embedding",
+  "licenseReviewStatus": "accepted-for-open-source-release",
   "policy": "self-sufficient-driver-runtime"
 }

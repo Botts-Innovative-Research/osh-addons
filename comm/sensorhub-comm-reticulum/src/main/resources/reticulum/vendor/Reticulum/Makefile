@@ -1,0 +1,110 @@
+all: release
+
+test:
+	@echo Running tests...
+	python3 -m tests.all
+
+clean:
+	@echo Cleaning...
+	@-rm -rf ./build
+	@-rm -rf ./dist
+	@-rm -rf ./*.data
+	@-rm -rf ./__pycache__
+	@-rm -rf ./RNS/__pycache__
+	@-rm -rf ./RNS/Cryptography/__pycache__
+	@-rm -rf ./RNS/Cryptography/aes/__pycache__
+	@-rm -rf ./RNS/Cryptography/pure25519/__pycache__
+	@-rm -rf ./RNS/Interfaces/__pycache__
+	@-rm -rf ./RNS/Utilities/__pycache__
+	@-rm -rf ./RNS/vendor/__pycache__
+	@-rm -rf ./RNS/vendor/i2plib/__pycache__
+	@-rm -rf ./tests/__pycache__
+	@-rm -rf ./tests/rnsconfig/storage
+	@-rm -rf ./*.egg-info
+	@-rm -rf ./RNS/*.c
+	@-rm -rf ./RNS/Cryptography/*.c
+	@-rm -rf ./RNS/Cryptography/aes/*.c
+	@-rm -rf ./RNS/Cryptography/pure25519/*.c
+	@-rm -rf ./RNS/Interfaces/*.c
+	@-rm -rf ./RNS/Interfaces/util/*.c
+	@-rm -rf ./RNS/Interfaces/Android/*.c
+	@-rm -rf ./RNS/Utilities/*.c
+	@-rm -rf ./RNS/Utilities/rngit/*.c
+	@-rm -rf ./RNS/Utilities/rnsh/*.c
+	@-rm -rf ./RNS/vendor/*.c
+	@-rm -rf ./RNS/vendor/i2plib/*.c
+	@-rm -rf 
+	@make -C docs clean
+	@echo Done
+
+purge_docs:
+	@echo Purging documentation build...
+	@-rm -rf ./docs/manual
+	@-rm -rf ./docs/markdown
+	@-rm -rf ./docs/*.pdf
+	@-rm -rf ./docs/*.epub
+
+remove_symlinks:
+	@echo Removing symlinks for build...
+	-rm Examples/RNS
+	-rm RNS/Utilities/RNS
+
+create_symlinks:
+	@echo Creating symlinks...
+	-ln -s ../RNS ./Examples/
+	-ln -s ../../RNS ./RNS/Utilities/
+
+build_sdist: purge_docs
+	python3 setup.py sdist
+
+build_wheel:
+	python3 setup.py bdist_wheel
+
+build_pure_wheel:
+	python3 setup.py bdist_wheel --pure
+
+build_native:
+	python3 setup.py bdist_wheel --native
+
+documentation:
+	make -C docs html markdown
+
+manual:
+	make -C docs latexpdf epub
+
+distcollect:
+	mv docs/Reticulum\ Manual.* dist
+
+build_spkg: remove_symlinks build_sdist create_symlinks
+
+release: test remove_symlinks build_sdist build_wheel build_pure_wheel documentation manual distcollect create_symlinks
+
+debug: remove_symlinks build_wheel build_pure_wheel create_symlinks
+
+native: remove_symlinks build_native create_symlinks
+
+local: release sign
+
+sign:
+	rngit release rns://7649a50d84610232d1416b41d2896aff/reticulum/reticulum create $$(python setup.py --getversion):dist --name rns --local
+
+upload:
+	@echo Ready to publish release over Reticulum
+	@read VOID
+	rngit release rns://7649a50d84610232d1416b41d2896aff/reticulum/reticulum create $$(python setup.py --getversion):dist --name rns
+
+upload-pip: upload-rns-pip upload-rnspure-pip
+
+upload-rns-pip:
+	@echo Ready to publish rns release, hit enter to continue
+	@read VOID
+	@echo Uploading to PyPi...
+	twine upload dist/rns-*.whl dist/rns-*.tar.gz
+	@echo Release published
+
+upload-rnspure-pip:
+	@echo Ready to publish rnspure release, hit enter to continue
+	@read VOID
+	@echo Uploading to PyPi...
+	twine upload dist/rnspure-*.whl
+	@echo Release published
