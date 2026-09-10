@@ -35,4 +35,16 @@ public class ReticulumNetworkConfigTest
         assertTrue(config.enableLxmf);
         assertTrue(config.enableLxst);
     }
+
+    @Test
+    public void scenarioReticulumEmbeddedRuntimeIsSelfSufficient()
+    {
+        String scenario = "SCENARIO-RETICULUM-EMBEDDED self sufficient embedded runtime";
+        ReticulumNetworkEmbeddedRuntime runtime = new ReticulumNetworkEmbeddedRuntime();
+        assertTrue(scenario, runtime.isSelfSufficient());
+        assertEquals("NO_EXTERNAL_PROCESS", ReticulumNetworkEmbeddedRuntime.PROCESS_POLICY);
+        assertTrue(runtime.bundledProtocols().contains("RNS"));
+        assertTrue(runtime.bundledProtocols().contains("LXMF"));
+        assertTrue(runtime.bundledProtocols().contains("LXST"));
+    }
 }

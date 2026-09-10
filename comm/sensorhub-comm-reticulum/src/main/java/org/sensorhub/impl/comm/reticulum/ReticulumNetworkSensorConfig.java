@@ -8,7 +8,7 @@ public class ReticulumNetworkSensorConfig extends SensorConfig
     @DisplayInfo(label="Sampling period", desc="RNS status sampling period in seconds.")
     public double samplingPeriodSeconds = 1.0;
 
-    @DisplayInfo(label="Interface name", desc="Reticulum interface name for fixture or process bridge status.")
+    @DisplayInfo(label="Interface name", desc="Reticulum interface name for fixture or embedded runtime status.")
     public String interfaceName = "fixture-loopback";
 
     @DisplayInfo(label="RNS config path", desc="Reticulum configuration file path, normally ~/.reticulum/config.")

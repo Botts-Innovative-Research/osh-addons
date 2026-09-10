@@ -1,0 +1,26 @@
+{
+  "vendoredSourceManifest": true,
+  "runtime": "embeddedReticulumRuntime",
+  "protocols": ["RNS", "LXMF", "LXST"],
+  "upstreamSources": [
+    {
+      "name": "Reticulum",
+      "url": "https://github.com/markqvist/Reticulum",
+      "license": "Reticulum License",
+      "embeddingStatus": "manifested-for-vendored-source"
+    },
+    {
+      "name": "LXMF",
+      "url": "https://github.com/markqvist/LXMF",
+      "license": "LXMF MIT License",
+      "embeddingStatus": "manifested-for-vendored-source"
+    },
+    {
+      "name": "LXST",
+      "url": "https://github.com/markqvist/lxst",
+      "license": "license-verification-required",
+      "embeddingStatus": "manifested-for-vendored-source"
+    }
+  ],
+  "policy": "self-sufficient-driver-runtime"
+}

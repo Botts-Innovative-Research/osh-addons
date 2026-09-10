@@ -9,7 +9,7 @@ public class ReticulumNetworkConfig extends CommProviderConfig<ReticulumNetworkC
     {
         NO_HARDWARE_SIMULATOR,
         FIXTURE_REPLAY,
-        PROCESS_BRIDGE
+        EMBEDDED_RETICULUM_RUNTIME
     }
 
     public enum InterfaceMode
@@ -38,7 +38,7 @@ public class ReticulumNetworkConfig extends CommProviderConfig<ReticulumNetworkC
     @DisplayInfo(label="RNS storage path", desc="Reticulum storage directory, normally ~/.reticulum.")
     public String rnsStoragePath = "~/.reticulum";
 
-    @DisplayInfo(label="Identity path", desc="Optional Reticulum identity path for process bridge or replay identity binding.")
+    @DisplayInfo(label="Identity path", desc="Optional Reticulum identity path for embedded runtime or replay identity binding.")
     public String identityPath = "";
 
     @DisplayInfo(label="Interface mode", desc="Reticulum interface mode represented in the OSH admin panel.")
@@ -71,8 +71,8 @@ public class ReticulumNetworkConfig extends CommProviderConfig<ReticulumNetworkC
     @DisplayInfo(label="Replay path", desc="Optional replay transcript path for deterministic no-hardware runs.")
     public String replayPath = "";
 
-    @DisplayInfo(label="Process bridge command", desc="Optional process bridge command for live rnsd integration.")
-    public String processBridgeCommand = "rnsd";
+    @DisplayInfo(label="Embedded runtime profile", desc="Embedded Reticulum runtime profile bundled with the driver.")
+    public String embeddedRuntimeProfile = "embeddedReticulumRuntime";
 
     @DisplayInfo(label="Status poll period", desc="RNS status poll period in seconds.")
     public double statusPollPeriodSeconds = 1.0;
@@ -92,7 +92,7 @@ public class ReticulumNetworkConfig extends CommProviderConfig<ReticulumNetworkC
     @DisplayInfo(label="LXMF storage path", desc="Optional LXMF router storage path.")
     public String lxmfStoragePath = "";
 
-    @DisplayInfo(label="Require LXMF authentication", desc="Require authenticated LXMF message handling where supported by the bridge.")
+    @DisplayInfo(label="Require LXMF authentication", desc="Require authenticated LXMF message handling where supported by the embedded runtime.")
     public boolean lxmfRequireAuthentication = false;
 
     @DisplayInfo(label="Retain synced LXMF messages", desc="Retain LXMF messages synchronized from a propagation node.")
@@ -123,6 +123,11 @@ public class ReticulumNetworkConfig extends CommProviderConfig<ReticulumNetworkC
     public boolean usesNoHardwareRuntime()
     {
         return runtimeMode == RuntimeMode.NO_HARDWARE_SIMULATOR || runtimeMode == RuntimeMode.FIXTURE_REPLAY;
+    }
+
+    public boolean usesEmbeddedRuntime()
+    {
+        return runtimeMode == RuntimeMode.EMBEDDED_RETICULUM_RUNTIME;
     }
 
     public static class ProtocolOptions
