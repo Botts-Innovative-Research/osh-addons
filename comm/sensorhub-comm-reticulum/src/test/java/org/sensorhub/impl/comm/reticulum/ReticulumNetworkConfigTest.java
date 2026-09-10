@@ -73,16 +73,12 @@ public class ReticulumNetworkConfigTest
         assertTrue(protocol.stdout, protocol.stdout.contains("\"RNS_PACKET\": {\"hashLen\": 16, \"ok\": true"));
         assertTrue(protocol.stdout, protocol.stdout.contains("\"LXMF_MESSAGE\": {\"content\": \"osh-body\", \"ok\": true"));
         assertTrue(protocol.stdout, protocol.stdout.contains("\"packedLen\":"));
-        assertFalse("SCENARIO-RETICULUM-PACKAGED-RUNTIME must fail closed until packagedPythonRuntime exists", runtime.packagedRuntimeAvailable(stagedRoot));
+        assertTrue("SCENARIO-RETICULUM-PACKAGED-RUNTIME packagedPythonRuntime exists", runtime.packagedRuntimeAvailable(stagedRoot));
         assertTrue(runtime.packagedPythonExecutable(stagedRoot).toString().contains("reticulum"));
-        try
-        {
-            runtime.runPackagedRuntimeSmoke(stagedRoot);
-            fail("SCENARIO-RETICULUM-PACKAGED-RUNTIME should require packagedPythonRuntime and embeddedWheelhouse");
-        }
-        catch (java.io.IOException expected)
-        {
-            assertTrue(expected.getMessage().contains("packagedPythonRuntime"));
-        }
+        ReticulumNetworkEmbeddedRuntime.ImportProbeResult packaged = runtime.runPackagedRuntimeSmoke(stagedRoot);
+        assertEquals("SCENARIO-RETICULUM-PACKAGED-RUNTIME-PASS packaged runtime smoke", 0, packaged.exitCode);
+        assertTrue(packaged.stdout, packaged.stdout.contains("\"LXST\": {\"ok\": true"));
+        assertTrue(packaged.stdout, packaged.stdout.contains("\"numpy\": {\"ok\": true, \"version\": \"2.3.4\""));
+        assertTrue(packaged.stdout, packaged.stdout.contains("\"PACKAGED_PROTOCOL\": {\"messagePackedLen\":"));
     }
 }

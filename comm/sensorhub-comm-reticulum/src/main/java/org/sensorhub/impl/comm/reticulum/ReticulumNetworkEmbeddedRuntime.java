@@ -65,6 +65,8 @@ public class ReticulumNetworkEmbeddedRuntime
                 Path output = runtimeRoot.resolve(resource);
                 Files.createDirectories(output.getParent());
                 Files.copy(input, output, StandardCopyOption.REPLACE_EXISTING);
+                if (resource.endsWith("/python/bin/python3") || resource.endsWith("/python/bin/python3.12") || resource.endsWith("/python/python.exe"))
+                    output.toFile().setExecutable(true, true);
             }
         }
         return runtimeRoot;
@@ -113,7 +115,43 @@ public class ReticulumNetworkEmbeddedRuntime
     {
         if (!packagedRuntimeAvailable(stagedRuntimeRoot))
             throw new IOException("SCENARIO-RETICULUM-PACKAGED-RUNTIME missing packagedPythonRuntime or embeddedWheelhouse");
-        return runEmbeddedProtocolSmoke(stagedRuntimeRoot, packagedPythonExecutable(stagedRuntimeRoot).toString());
+        String script = ""
+            + "import json, importlib\n"
+            + "results = {}\n"
+            + "for mod in ['RNS','LXMF','LXST','numpy','pycodec2','cffi']:\n"
+            + "    try:\n"
+            + "        m = importlib.import_module(mod)\n"
+            + "        results[mod] = {'ok': True, 'version': getattr(m, '__version__', None)}\n"
+            + "    except Exception as e:\n"
+            + "        results[mod] = {'ok': False, 'error': type(e).__name__, 'message': str(e)}\n"
+            + "try:\n"
+            + "    import RNS, LXMF\n"
+            + "    identity = RNS.Identity()\n"
+            + "    destination = RNS.Destination(identity, RNS.Destination.OUT, RNS.Destination.SINGLE, 'sensorhub', 'reticulum', 'smoke')\n"
+            + "    packet = RNS.Packet(destination, b'osh-reticulum-smoke', create_receipt=False)\n"
+            + "    packet.pack()\n"
+            + "    source = RNS.Destination(identity, RNS.Destination.OUT, RNS.Destination.SINGLE, 'lxmf', 'delivery')\n"
+            + "    message = LXMF.LXMessage(destination, source, 'osh-body', 'osh-title', desired_method=LXMF.LXMessage.DIRECT)\n"
+            + "    message.pack()\n"
+            + "    results['PACKAGED_PROTOCOL'] = {'ok': True, 'packetRawLen': len(packet.raw) if packet.raw else 0, 'messagePackedLen': len(message.packed) if message.packed else 0}\n"
+            + "except Exception as e:\n"
+            + "    results['PACKAGED_PROTOCOL'] = {'ok': False, 'error': type(e).__name__, 'message': str(e)}\n"
+            + "print(json.dumps(results, sort_keys=True))\n";
+        ProcessBuilder builder = new ProcessBuilder(packagedPythonExecutable(stagedRuntimeRoot).toString(), "-c", script);
+        Map<String, String> environment = builder.environment();
+        environment.put("PYTHONPATH", reticulumPythonPath(stagedRuntimeRoot));
+        environment.put("PYTHONNOUSERSITE", "1");
+        environment.remove("PYTHONHOME");
+        Process process = builder.start();
+        boolean finished = process.waitFor(Duration.ofSeconds(30).toMillis(), java.util.concurrent.TimeUnit.MILLISECONDS);
+        if (!finished)
+        {
+            process.destroyForcibly();
+            throw new IOException("Packaged runtime smoke timed out");
+        }
+        String stdout = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+        String stderr = new String(process.getErrorStream().readAllBytes(), StandardCharsets.UTF_8);
+        return new ImportProbeResult(process.exitValue(), stdout, stderr);
     }
 
     public ImportProbeResult runEmbeddedImportSmoke(Path stagedRuntimeRoot, String pythonExecutable)
