@@ -1,0 +1,38 @@
+{
+  "runtime-platform-matrix": true,
+  "packagedPythonRuntime": "required-before-release",
+  "embeddedWheelhouse": "required-before-release",
+  "platforms": [
+    {
+      "id": "linux-x86_64",
+      "pythonExecutable": "reticulum/runtime/linux-x86_64/python/bin/python3",
+      "dependencies": ["numpy", "pycodec2", "cffi"],
+      "status": "missing-packaged-runtime"
+    },
+    {
+      "id": "macos-aarch64",
+      "pythonExecutable": "reticulum/runtime/macos-aarch64/python/bin/python3",
+      "dependencies": ["numpy", "pycodec2", "cffi"],
+      "status": "missing-packaged-runtime"
+    },
+    {
+      "id": "macos-x86_64",
+      "pythonExecutable": "reticulum/runtime/macos-x86_64/python/bin/python3",
+      "dependencies": ["numpy", "pycodec2", "cffi"],
+      "status": "missing-packaged-runtime"
+    },
+    {
+      "id": "windows-x86_64",
+      "pythonExecutable": "reticulum/runtime/windows-x86_64/python/python.exe",
+      "dependencies": ["numpy", "pycodec2", "cffi"],
+      "status": "missing-packaged-runtime"
+    },
+    {
+      "id": "python-3.13-plus",
+      "pythonExecutable": "platform-specific",
+      "dependencies": ["audioop-lts"],
+      "status": "conditional-missing-packaged-runtime"
+    }
+  ],
+  "releaseGate": "Packaged runtime smoke must pass without system python3 before claiming full self-sufficiency."
+}

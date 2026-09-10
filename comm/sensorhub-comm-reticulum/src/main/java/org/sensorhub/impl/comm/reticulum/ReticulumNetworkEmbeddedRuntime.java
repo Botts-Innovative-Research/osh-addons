@@ -12,6 +12,7 @@ import java.time.Duration;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.stream.Collectors;
 
@@ -76,6 +77,43 @@ public class ReticulumNetworkEmbeddedRuntime
             + stagedRuntimeRoot.resolve("reticulum/vendor/LXMF").toString()
             + java.io.File.pathSeparator
             + stagedRuntimeRoot.resolve("reticulum/vendor/lxst").toString();
+    }
+
+    public Path packagedPythonExecutable(Path stagedRuntimeRoot)
+    {
+        String osName = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
+        String arch = System.getProperty("os.arch", "").toLowerCase(Locale.ROOT);
+        String platform;
+        if (osName.contains("win"))
+            platform = "windows-x86_64";
+        else if (osName.contains("mac") && (arch.contains("aarch64") || arch.contains("arm64")))
+            platform = "macos-aarch64";
+        else if (osName.contains("mac"))
+            platform = "macos-x86_64";
+        else
+            platform = "linux-x86_64";
+        String executable = platform.startsWith("windows") ? "python.exe" : "bin/python3";
+        return stagedRuntimeRoot.resolve("reticulum/runtime").resolve(platform).resolve("python").resolve(executable);
+    }
+
+    public boolean packagedRuntimeAvailable(Path stagedRuntimeRoot)
+    {
+        Path executable = packagedPythonExecutable(stagedRuntimeRoot);
+        Path executableParent = executable.getParent();
+        Path platformRoot = executableParent != null && "bin".equals(executableParent.getFileName().toString())
+            ? executableParent.getParent().getParent()
+            : executableParent.getParent();
+        return Files.isRegularFile(executable) && Files.isExecutable(executable)
+            && platformRoot != null
+            && Files.isDirectory(platformRoot.resolve("wheelhouse"));
+    }
+
+    public ImportProbeResult runPackagedRuntimeSmoke(Path stagedRuntimeRoot)
+        throws IOException, InterruptedException
+    {
+        if (!packagedRuntimeAvailable(stagedRuntimeRoot))
+            throw new IOException("SCENARIO-RETICULUM-PACKAGED-RUNTIME missing packagedPythonRuntime or embeddedWheelhouse");
+        return runEmbeddedProtocolSmoke(stagedRuntimeRoot, packagedPythonExecutable(stagedRuntimeRoot).toString());
     }
 
     public ImportProbeResult runEmbeddedImportSmoke(Path stagedRuntimeRoot, String pythonExecutable)
