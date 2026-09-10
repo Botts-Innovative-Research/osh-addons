@@ -28,8 +28,8 @@ public class ReticulumNetworkProvider extends AbstractModule<ReticulumNetworkCon
     @Override
     protected void doStart() throws SensorHubException
     {
-        ReticulumNetworkNoHardwareSimulator.Status status = simulator.nextStatus();
-        String frame = status.interfaceName + "," + status.online + "," + status.peers + ",LXMF,LXST\n";
+        ReticulumNetworkRnsStatusFrame status = simulator.nextStatus();
+        String frame = status.toObservationCsv() + ",LXMF,LXST\n";
         inbound = new ByteArrayInputStream(frame.getBytes(StandardCharsets.UTF_8));
         statusOutput.publish(status);
     }

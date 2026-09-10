@@ -44,14 +44,15 @@ public class ReticulumNetworkSensorOutput extends AbstractSensorOutput<Reticulum
 
     public void publishFixture()
     {
+        ReticulumNetworkRnsStatusFrame status = ReticulumNetworkRnsStatusFrame.fromFixture("fixture-loopback,true,1000000,1,0,1");
         DataBlock dataBlock = dataStruct.createDataBlock();
         int i = 0;
         dataBlock.setDoubleValue(i++, System.currentTimeMillis() / 1000.0);
-        dataBlock.setStringValue(i++, "fixture-loopback");
-        dataBlock.setBooleanValue(i++, true);
-        dataBlock.setIntValue(i++, 1);
-        dataBlock.setIntValue(i++, 0);
-        dataBlock.setIntValue(i++, 0);
+        dataBlock.setStringValue(i++, status.interfaceName);
+        dataBlock.setBooleanValue(i++, status.online);
+        dataBlock.setIntValue(i++, status.peers);
+        dataBlock.setIntValue(i++, status.lxmfQueued);
+        dataBlock.setIntValue(i++, status.lxstStreams);
         latestRecord = dataBlock;
         latestRecordTime = System.currentTimeMillis();
         eventHandler.publish(new DataEvent(latestRecordTime, this, dataBlock));

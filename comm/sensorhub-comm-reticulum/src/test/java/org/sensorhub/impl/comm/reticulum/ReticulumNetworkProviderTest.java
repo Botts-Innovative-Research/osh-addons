@@ -11,6 +11,7 @@ public class ReticulumNetworkProviderTest
         String scenario = "SCENARIO-RETICULUM no-hardware fixture runtime";
         ReticulumNetworkNoHardwareSimulator simulator = new ReticulumNetworkNoHardwareSimulator();
         assertTrue(scenario, simulator.nextStatus().online);
+        assertEquals("fixture-loopback", simulator.nextStatus().interfaceName);
     }
 
     @Test

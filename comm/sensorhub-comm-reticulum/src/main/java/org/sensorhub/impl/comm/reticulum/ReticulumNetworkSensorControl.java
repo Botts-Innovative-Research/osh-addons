@@ -24,6 +24,9 @@ public class ReticulumNetworkSensorControl extends AbstractSensorControl<Reticul
             .addField("message", fac.createText()
                 .label("LXMF message")
                 .description("Outbound LXMF message payload"))
+            .addField("propagationNode", fac.createText()
+                .label("LXMF propagation node")
+                .description("Optional propagation node for propagated LXMF delivery"))
             .build();
     }
 

@@ -4,7 +4,7 @@ import org.vast.swe.SWEHelper;
 
 public class ReticulumNetworkStatusOutput
 {
-    private ReticulumNetworkNoHardwareSimulator.Status lastStatus;
+    private ReticulumNetworkRnsStatusFrame lastStatus;
 
     public String getRecordDescription()
     {
@@ -14,12 +14,12 @@ public class ReticulumNetworkStatusOutput
             + swe.getClass().getSimpleName();
     }
 
-    public void publish(ReticulumNetworkNoHardwareSimulator.Status status)
+    public void publish(ReticulumNetworkRnsStatusFrame status)
     {
         this.lastStatus = status;
     }
 
-    public ReticulumNetworkNoHardwareSimulator.Status getLastStatus()
+    public ReticulumNetworkRnsStatusFrame getLastStatus()
     {
         return lastStatus;
     }
