@@ -2,6 +2,8 @@ package org.sensorhub.impl.comm.reticulum;
 
 import static org.junit.Assert.*;
 import java.lang.reflect.Field;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import org.junit.Test;
 import org.sensorhub.api.config.DisplayInfo;
 
@@ -38,6 +40,7 @@ public class ReticulumNetworkConfigTest
 
     @Test
     public void scenarioReticulumEmbeddedRuntimeIsSelfSufficient()
+        throws Exception
     {
         String scenario = "SCENARIO-RETICULUM-EMBEDDED self sufficient embedded runtime";
         ReticulumNetworkEmbeddedRuntime runtime = new ReticulumNetworkEmbeddedRuntime();
@@ -46,5 +49,14 @@ public class ReticulumNetworkConfigTest
         assertTrue(runtime.bundledProtocols().contains("RNS"));
         assertTrue(runtime.bundledProtocols().contains("LXMF"));
         assertTrue(runtime.bundledProtocols().contains("LXST"));
+        assertTrue(runtime.hasVendoredResource("reticulum/vendor/Reticulum/RNS/Reticulum.py"));
+        assertTrue(runtime.hasVendoredResource("reticulum/vendor/LXMF/LXMF/LXMRouter.py"));
+        assertTrue(runtime.hasVendoredResource("reticulum/vendor/lxst/LXST/Network.py"));
+        assertTrue(runtime.resourceIndex().contains("reticulum/vendor/Reticulum/RNS/Reticulum.py"));
+        Path stagedRoot = runtime.stageVendoredRuntime(Files.createTempDirectory("reticulum-runtime-test"));
+        assertTrue(Files.isRegularFile(stagedRoot.resolve("reticulum/vendor/Reticulum/RNS/Reticulum.py")));
+        assertTrue(Files.isRegularFile(stagedRoot.resolve("reticulum/vendor/LXMF/LXMF/LXMRouter.py")));
+        assertTrue(Files.isRegularFile(stagedRoot.resolve("reticulum/vendor/lxst/LXST/Network.py")));
+        assertTrue(runtime.reticulumPythonPath(stagedRoot).contains("vendor"));
     }
 }
