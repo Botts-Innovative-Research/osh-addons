@@ -52,6 +52,10 @@ public class ReticulumNetworkConfigTest
         assertTrue(runtime.hasVendoredResource("reticulum/vendor/Reticulum/RNS/Reticulum.py"));
         assertTrue(runtime.hasVendoredResource("reticulum/vendor/LXMF/LXMF/LXMRouter.py"));
         assertTrue(runtime.hasVendoredResource("reticulum/vendor/lxst/LXST/Network.py"));
+        assertTrue("SCENARIO-RETICULUM-RUNTIME-BUNDLE-RECIPE packaging doc", runtime.hasVendoredResource("reticulum/PYTHON-INTERPRETER-PACKAGING.md"));
+        assertTrue("SCENARIO-RETICULUM-RUNTIME-BUNDLE-RECIPE runtime matrix", runtime.hasVendoredResource("reticulum/RETICULUM-PACKAGED-RUNTIME-MATRIX.json"));
+        assertTrue("SCENARIO-RETICULUM-RUNTIME-BUNDLE-RECIPE runtime lock", runtime.hasVendoredResource("reticulum/RETICULUM-RUNTIME-BUNDLE-LOCK.json"));
+        assertTrue("SCENARIO-RETICULUM-RUNTIME-BUNDLE-RECIPE build script", runtime.hasVendoredResource("reticulum/runtime-build/build-reticulum-runtime-bundle.sh"));
         assertTrue(runtime.resourceIndex().contains("reticulum/vendor/Reticulum/RNS/Reticulum.py"));
         Path stagedRoot = runtime.stageVendoredRuntime(Files.createTempDirectory("reticulum-runtime-test"));
         assertTrue(Files.isRegularFile(stagedRoot.resolve("reticulum/vendor/Reticulum/RNS/Reticulum.py")));

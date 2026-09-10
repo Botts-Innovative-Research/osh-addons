@@ -1,0 +1,23 @@
+{
+  "runtime-bundle-lock": true,
+  "pythonRequires": ">=3.11,<3.14",
+  "sourcePins": {
+    "Reticulum": "ea98db4f53dcf0defc0e71a16e60d28b1229c4e6",
+    "LXMF": "795fdaa2b0777c13033787d933d1afc94a2377cb",
+    "LXST": "1194c9011fe6402edc7aebe7ffe9650ea3b1afee"
+  },
+  "pythonPackages": [
+    {"name": "numpy", "version": "2.3.4", "reason": "LXST audio/frame arrays"},
+    {"name": "pycodec2", "version": "4.1.0", "reason": "LXST Codec2 voice codec"},
+    {"name": "cffi", "version": "2.0.0", "reason": "LXST platform audio FFI"},
+    {"name": "audioop-lts", "version": "0.2.1", "marker": "python_version >= '3.13'", "reason": "audioop compatibility for Python 3.13+"}
+  ],
+  "bundleOutputs": [
+    "reticulum/runtime/linux-x86_64",
+    "reticulum/runtime/macos-aarch64",
+    "reticulum/runtime/macos-x86_64",
+    "reticulum/runtime/windows-x86_64"
+  ],
+  "policy": "do-not-use-system-site-packages",
+  "releaseGate": "runPackagedRuntimeSmoke must execute with packagedPythonExecutable before final self-sufficient release."
+}
