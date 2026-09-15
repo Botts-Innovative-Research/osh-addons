@@ -221,33 +221,41 @@ public class FFMPEGSensor extends AbstractSensorModule<FFMPEGConfig> {
 
         // Initialize the MPEG transport stream processor from the source named in the configuration.
         if (mpegTsProcessor.openStream()) {
-            // If there is a video content in the stream
-            if (mpegTsProcessor.hasVideoStream()) {
-                // In case we were waiting until we got video data to make the video frame output,
-                // we go ahead and do that now.
-                if (videoOutput == null) {
-                    createVideoOutput(mpegTsProcessor.getVideoStreamFrameDimensions(), mpegTsProcessor.getVideoCodecName());
-                }
-                // Set video stream packet listener to video output
-                mpegTsProcessor.setVideoDataBufferListener(videoOutput);
-            }
-
-            // If there is an audio content in the stream
-            if (mpegTsProcessor.hasAudioStream()) {
-                // In case we were waiting until we got audio data to make the audio output,
-                // we go ahead and do that now.
-                if (audioOutput == null) {
-                    createAudioOutput(mpegTsProcessor.getAudioSampleRate(), mpegTsProcessor.getAudioCodecName());
-                }
-                // Set audio stream packet listener to audio output
-                mpegTsProcessor.setAudioDataBufferListener(audioOutput);
-            }
-
+            initializeOutputs();
             logger.info("MPEG TS stream for {} opened.", getUniqueIdentifier());
             return true;
         }
 
         return false;
+    }
+
+    /**
+     * Called after the stream is opened.
+     * Initialize outputs based on the stream contents.
+     * <br>Override this method for custom output handling. (Multiple video output, custom data stream output, etc.)
+     */
+    protected void initializeOutputs() {
+        // If there is a video content in the stream
+        if (mpegTsProcessor.hasVideoStream()) {
+            // In case we were waiting until we got video data to make the video frame output,
+            // we go ahead and do that now.
+            if (videoOutput == null) {
+                createVideoOutput(mpegTsProcessor.getVideoStreamFrameDimensions(), mpegTsProcessor.getVideoCodecName());
+            }
+            // Set video stream packet listener to video output
+            mpegTsProcessor.setVideoDataBufferListener(videoOutput);
+        }
+
+        // If there is an audio content in the stream
+        if (mpegTsProcessor.hasAudioStream()) {
+            // In case we were waiting until we got audio data to make the audio output,
+            // we go ahead and do that now.
+            if (audioOutput == null) {
+                createAudioOutput(mpegTsProcessor.getAudioSampleRate(), mpegTsProcessor.getAudioCodecName());
+            }
+            // Set audio stream packet listener to audio output
+            mpegTsProcessor.setAudioDataBufferListener(audioOutput);
+        }
     }
 
     /**
