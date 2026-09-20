@@ -80,5 +80,12 @@ public class ReticulumNetworkConfigTest
         assertTrue(packaged.stdout, packaged.stdout.contains("\"LXST\": {\"ok\": true"));
         assertTrue(packaged.stdout, packaged.stdout.contains("\"numpy\": {\"ok\": true, \"version\": \"2.3.4\""));
         assertTrue(packaged.stdout, packaged.stdout.contains("\"PACKAGED_PROTOCOL\": {\"messagePackedLen\":"));
+        ReticulumNetworkEmbeddedRuntime.ImportProbeResult loopback = runtime.runLiveLocalLoopbackSmoke(stagedRoot);
+        assertEquals("SCENARIO-RETICULUM-LIVE-LOCAL-LOOPBACK packaged RNS UDP loopback", 0, loopback.exitCode);
+        assertTrue(loopback.stdout, loopback.stdout.contains("\"ok\": true"));
+        assertTrue(loopback.stdout, loopback.stdout.contains("\"pathResolved\": true"));
+        assertTrue(loopback.stdout, loopback.stdout.contains("\"identityRecalled\": true"));
+        assertTrue(loopback.stdout, loopback.stdout.contains("\"sent\": true"));
+        assertTrue(loopback.stdout, loopback.stdout.contains("\"osh-reticulum-live-loopback\""));
     }
 }

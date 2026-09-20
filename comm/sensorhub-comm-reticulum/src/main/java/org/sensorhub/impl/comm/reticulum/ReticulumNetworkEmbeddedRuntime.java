@@ -105,9 +105,15 @@ public class ReticulumNetworkEmbeddedRuntime
         Path platformRoot = executableParent != null && "bin".equals(executableParent.getFileName().toString())
             ? executableParent.getParent().getParent()
             : executableParent.getParent();
+        Path sitePackages = platformRoot == null
+            ? null
+            : platformRoot.resolve("python/lib/python3.12/site-packages");
         return Files.isRegularFile(executable) && Files.isExecutable(executable)
             && platformRoot != null
-            && Files.isDirectory(platformRoot.resolve("wheelhouse"));
+            && (Files.isDirectory(platformRoot.resolve("wheelhouse"))
+                || (Files.isDirectory(sitePackages.resolve("numpy"))
+                    && Files.isDirectory(sitePackages.resolve("pycodec2"))
+                    && Files.isDirectory(sitePackages.resolve("cffi"))));
     }
 
     public ImportProbeResult runPackagedRuntimeSmoke(Path stagedRuntimeRoot)
@@ -148,6 +154,107 @@ public class ReticulumNetworkEmbeddedRuntime
         {
             process.destroyForcibly();
             throw new IOException("Packaged runtime smoke timed out");
+        }
+        String stdout = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+        String stderr = new String(process.getErrorStream().readAllBytes(), StandardCharsets.UTF_8);
+        return new ImportProbeResult(process.exitValue(), stdout, stderr);
+    }
+
+    public ImportProbeResult runLiveLocalLoopbackSmoke(Path stagedRuntimeRoot)
+        throws IOException, InterruptedException
+    {
+        if (!packagedRuntimeAvailable(stagedRuntimeRoot))
+            throw new IOException("SCENARIO-RETICULUM-LIVE-LOCAL-LOOPBACK missing packagedPythonRuntime or embeddedWheelhouse");
+        String script = ""
+            + "import json, os, socket, subprocess, sys, tempfile, time\n"
+            + "def free_port():\n"
+            + "    s = socket.socket(); s.bind(('127.0.0.1', 0)); p = s.getsockname()[1]; s.close(); return p\n"
+            + "rp, sp = free_port(), free_port()\n"
+            + "work = tempfile.mkdtemp(prefix='rns-live-loopback-')\n"
+            + "def write_config(name, listen, forward):\n"
+            + "    d = os.path.join(work, name); os.makedirs(d)\n"
+            + "    with open(os.path.join(d, 'config'), 'w') as f:\n"
+            + "        f.write('[reticulum]\\n')\n"
+            + "        f.write('enable_transport = No\\n')\n"
+            + "        f.write('share_instance = No\\n')\n"
+            + "        f.write('shared_instance_port = %d\\n\\n' % free_port())\n"
+            + "        f.write('[interfaces]\\n')\n"
+            + "        f.write('  [[%s]]\\n' % name)\n"
+            + "        f.write('    type = UDPInterface\\n')\n"
+            + "        f.write('    enabled = yes\\n')\n"
+            + "        f.write('    listen_ip = 127.0.0.1\\n')\n"
+            + "        f.write('    listen_port = %d\\n' % listen)\n"
+            + "        f.write('    forward_ip = 127.0.0.1\\n')\n"
+            + "        f.write('    forward_port = %d\\n' % forward)\n"
+            + "    return d\n"
+            + "rcfg = write_config('osh_receiver', rp, sp); scfg = write_config('osh_sender', sp, rp)\n"
+            + "receiver_code = r'''\n"
+            + "import json, sys, time, threading\n"
+            + "import RNS\n"
+            + "RNS.Reticulum(configdir=sys.argv[1], loglevel=3)\n"
+            + "received=[]; event=threading.Event()\n"
+            + "identity=RNS.Identity()\n"
+            + "dest=RNS.Destination(identity, RNS.Destination.IN, RNS.Destination.SINGLE, 'sensorhub', 'reticulum', 'loopback')\n"
+            + "def cb(data, packet):\n"
+            + "    received.append(data.decode()); event.set()\n"
+            + "dest.set_packet_callback(cb)\n"
+            + "print('READY '+RNS.hexrep(dest.hash, delimit=False), flush=True)\n"
+            + "end=time.time()+8\n"
+            + "while time.time()<end and not event.is_set():\n"
+            + "    dest.announce(); time.sleep(0.5)\n"
+            + "ok=event.wait(0.1)\n"
+            + "print('RESULT '+json.dumps({'ok':ok,'received':received,'destinationHash':RNS.hexrep(dest.hash, delimit=False),'rxPackets':RNS.Transport.rx_packets,'txPackets':RNS.Transport.tx_packets}, sort_keys=True), flush=True)\n"
+            + "'''\n"
+            + "sender_code = r'''\n"
+            + "import json, sys, time\n"
+            + "import RNS\n"
+            + "configdir=sys.argv[1]; destination_hash=bytes.fromhex(sys.argv[2])\n"
+            + "RNS.Reticulum(configdir=configdir, loglevel=3)\n"
+            + "if not RNS.Transport.has_path(destination_hash):\n"
+            + "    RNS.Transport.request_path(destination_hash)\n"
+            + "limit=time.time()+8\n"
+            + "while not RNS.Transport.has_path(destination_hash) and time.time()<limit:\n"
+            + "    time.sleep(0.2)\n"
+            + "path=RNS.Transport.has_path(destination_hash)\n"
+            + "identity=RNS.Identity.recall(destination_hash) if path else None\n"
+            + "sent=False; packet_hash=None; raw_len=0\n"
+            + "if identity:\n"
+            + "    dest=RNS.Destination(identity, RNS.Destination.OUT, RNS.Destination.SINGLE, 'sensorhub', 'reticulum', 'loopback')\n"
+            + "    packet=RNS.Packet(dest, b'osh-reticulum-live-loopback', create_receipt=False)\n"
+            + "    packet.send(); sent=True\n"
+            + "    packet_hash=RNS.hexrep(packet.packet_hash, delimit=False) if packet.packet_hash else None\n"
+            + "    raw_len=len(packet.raw) if packet.raw else 0\n"
+            + "print(json.dumps({'pathResolved':path,'identityRecalled':identity is not None,'sent':sent,'packetHash':packet_hash,'rawLength':raw_len,'rxPackets':RNS.Transport.rx_packets,'txPackets':RNS.Transport.tx_packets}, sort_keys=True), flush=True)\n"
+            + "'''\n"
+            + "open(os.path.join(work, 'receiver.py'), 'w').write(receiver_code)\n"
+            + "open(os.path.join(work, 'sender.py'), 'w').write(sender_code)\n"
+            + "env=os.environ.copy(); env['PYTHONNOUSERSITE']='1'; env.pop('PYTHONHOME', None)\n"
+            + "receiver=subprocess.Popen([sys.executable, os.path.join(work,'receiver.py'), rcfg], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)\n"
+            + "ready=None; start=time.time()\n"
+            + "while time.time()-start<5:\n"
+            + "    line=receiver.stdout.readline()\n"
+            + "    if line.startswith('READY '): ready=line.strip().split()[1]; break\n"
+            + "if not ready:\n"
+            + "    receiver.kill(); print(json.dumps({'ok':False,'error':'receiver-not-ready','receiverStderr':receiver.stderr.read()}, sort_keys=True)); sys.exit(2)\n"
+            + "sender=subprocess.run([sys.executable, os.path.join(work,'sender.py'), scfg, ready], text=True, capture_output=True, env=env, timeout=15)\n"
+            + "out, err = receiver.communicate(timeout=15)\n"
+            + "receiver_result=None\n"
+            + "for line in out.splitlines():\n"
+            + "    if line.startswith('RESULT '): receiver_result=json.loads(line[7:])\n"
+            + "sender_result=json.loads(sender.stdout or '{}')\n"
+            + "result={'ok': bool(receiver_result and receiver_result.get('ok') and sender.returncode==0 and sender_result.get('pathResolved') and sender_result.get('sent')), 'loopbackMessage':'osh-reticulum-live-loopback', 'receiver':receiver_result, 'sender':sender_result, 'ports':{'receiver':rp,'sender':sp}, 'receiverStderr':err[-2000:], 'senderStderr':sender.stderr[-2000:]}\n"
+            + "print(json.dumps(result, sort_keys=True))\n";
+        ProcessBuilder builder = new ProcessBuilder(packagedPythonExecutable(stagedRuntimeRoot).toString(), "-c", script);
+        Map<String, String> environment = builder.environment();
+        environment.put("PYTHONPATH", reticulumPythonPath(stagedRuntimeRoot));
+        environment.put("PYTHONNOUSERSITE", "1");
+        environment.remove("PYTHONHOME");
+        Process process = builder.start();
+        boolean finished = process.waitFor(Duration.ofSeconds(30).toMillis(), java.util.concurrent.TimeUnit.MILLISECONDS);
+        if (!finished)
+        {
+            process.destroyForcibly();
+            throw new IOException("Live local loopback smoke timed out");
         }
         String stdout = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
         String stderr = new String(process.getErrorStream().readAllBytes(), StandardCharsets.UTF_8);
