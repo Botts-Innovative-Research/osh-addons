@@ -87,5 +87,15 @@ public class ReticulumNetworkConfigTest
         assertTrue(loopback.stdout, loopback.stdout.contains("\"identityRecalled\": true"));
         assertTrue(loopback.stdout, loopback.stdout.contains("\"sent\": true"));
         assertTrue(loopback.stdout, loopback.stdout.contains("\"osh-reticulum-live-loopback\""));
+        ReticulumNetworkEmbeddedRuntime.ImportProbeResult extended = runtime.runLiveExtendedProtocolSmoke(stagedRoot);
+        assertEquals("SCENARIO-RETICULUM-LIVE-LXMF-DELIVERY live LXMF delivery", 0, extended.exitCode);
+        assertTrue(extended.stdout, extended.stdout.contains("\"LXMF_DELIVERY\": {\"ok\": true"));
+        assertTrue(extended.stdout, extended.stdout.contains("\"osh-lxmf-live-delivery\""));
+        assertTrue(extended.stdout, extended.stdout.contains("SCENARIO-RETICULUM-LIVE-LXST-STREAMING") || extended.stdout.contains("\"LXST_STREAMING\": {\"codec\": \"Raw\""));
+        assertTrue(extended.stdout, extended.stdout.contains("\"frameCount\":"));
+        assertTrue(extended.stdout, extended.stdout.contains("\"RNS_ROUTED_PEER\": {\"ok\": true"));
+        assertTrue(extended.stdout, extended.stdout.contains("\"osh-reticulum-routed-peer\""));
+        assertTrue(extended.stdout, extended.stdout.contains("router_to_receiver"));
+        assertTrue(extended.stdout, extended.stdout.contains("router_to_sender"));
     }
 }
