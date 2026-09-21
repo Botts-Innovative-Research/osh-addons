@@ -79,7 +79,11 @@ public class ReticulumNetworkEmbeddedRuntime
             + java.io.File.pathSeparator
             + stagedRuntimeRoot.resolve("reticulum/vendor/LXMF").toString()
             + java.io.File.pathSeparator
-            + stagedRuntimeRoot.resolve("reticulum/vendor/lxst").toString();
+            + stagedRuntimeRoot.resolve("reticulum/vendor/lxst").toString()
+            + java.io.File.pathSeparator
+            + stagedRuntimeRoot.resolve("reticulum/runtime/linux-x86_64/python/lib/python3.12/site-packages").toString()
+            + java.io.File.pathSeparator
+            + stagedRuntimeRoot.resolve("reticulum/runtime/linux-aarch64/python/lib/python3.12/site-packages").toString();
     }
 
     public Path packagedPythonExecutable(Path stagedRuntimeRoot)
