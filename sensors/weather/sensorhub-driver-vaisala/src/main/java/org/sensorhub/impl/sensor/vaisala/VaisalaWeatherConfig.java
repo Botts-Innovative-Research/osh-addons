@@ -15,8 +15,9 @@ public class VaisalaWeatherConfig extends SensorConfig
     @DisplayInfo(label="Communication Settings", desc="Settings for selected communication port")
     public CommProviderConfig<?> commSettings;
 
+    @DisplayInfo.Required
     @DisplayInfo(label="Command Timeout", desc="Maximum wait for a command reply in milliseconds")
-    public long commandTimeoutMillis = 3000;
+    public int commandTimeoutMillis = 10000;
 
     @DisplayInfo(label="Connection Options")
     public RobustConnectionConfig connection = new RobustConnectionConfig();
