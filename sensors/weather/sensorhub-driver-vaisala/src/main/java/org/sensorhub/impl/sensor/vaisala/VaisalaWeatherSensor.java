@@ -9,11 +9,18 @@ import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.impl.module.RobustConnection;
 import org.sensorhub.impl.sensor.AbstractSensorModule;
 import org.sensorhub.impl.sensor.vaisala.outputs.*;
+import org.vast.ogc.om.SamplingPoint;
+import net.opengis.gml.v32.impl.GMLFactory;
+import org.vast.swe.SWEConstants;
+import java.nio.charset.StandardCharsets;
+import java.util.UUID;
 import org.vast.sensorML.SMLFactory;
 import org.vast.swe.SWEHelper;
 
 
 public class VaisalaWeatherSensor extends AbstractSensorModule<VaisalaWeatherConfig> {
+    static final String UID_PREFIX = "urn:osh:sensor:georobotix:vaisala:";
+
     RobustConnection connection;
     ICommProvider<?> commProvider;
     InputStream dataIn;
@@ -27,6 +34,7 @@ public class VaisalaWeatherSensor extends AbstractSensorModule<VaisalaWeatherCon
 
     String modelNumber;
     String serialNumber = null;
+    private String samplingFoiUID;
     String deviceAddress = null;
 
     String lastCommand = null;
@@ -62,12 +70,7 @@ public class VaisalaWeatherSensor extends AbstractSensorModule<VaisalaWeatherCon
         if (config.commandTimeoutMillis <= 0)
             throw new SensorHubException("Command timeout must be positive");
 
-        serialNumber = config.serialNumber;
-        if (serialNumber == null)
-        {
-            int endIndex = Math.min(config.id.length(), 8);
-            serialNumber = config.id.substring(0, endIndex);
-        }
+        serialNumber = config.serialNumber == null ? null : config.serialNumber.trim();
 
         // Generate identifiers
         this.uniqueID = "urn:osh:georobotix:sensor:vaisala:" + serialNumber;
@@ -76,6 +79,7 @@ public class VaisalaWeatherSensor extends AbstractSensorModule<VaisalaWeatherCon
         // Add outputs
         createOutputs();
 
+        createSamplingFoi();
         getLogger().info("Vaisala initialization complete: address={}, model={}", deviceAddress, modelNumber);
     }
 
@@ -124,7 +128,34 @@ public class VaisalaWeatherSensor extends AbstractSensorModule<VaisalaWeatherCon
         supOut.doInit();
     }
 
+    private String sendAndReceive(String command) throws IOException {
+        lastCommand = command;
+        return messageHandler.sendAndAwait(command, config.commandTimeoutMillis);
     }
+
+    private void createSamplingFoi() {
+        samplingFoiUID = uniqueID + ":foi";
+        SamplingPoint foi = new SamplingPoint();
+        foi.setId("FOI_" + xmlID);
+        foi.setUniqueIdentifier(samplingFoiUID);
+        foi.setHostedProcedureUID(uniqueID);
+        foi.setName(config.name == null ? "Vaisala" : config.name);
+        foi.setDescription("Vaisala weather observations");
+//        var location = config.getLocation();
+//        if (location != null) {
+//            var point = new GMLFactory(true).newPoint();
+//            point.setSrsName(SWEConstants.REF_FRAME_4979);
+//            point.setSrsDimension(3);
+//            point.setPos(new double[] {location.lat, location.lon, location.alt});
+//            foi.setShape(point);
+//        }
+        synchronized (foiMap) {
+            foiMap.clear();
+            addFoi(foi);
+        }
+    }
+
+    public String getSamplingFoiUID() { return samplingFoiUID; }
 
     @Override
     protected void updateSensorDescription() {
@@ -181,46 +212,20 @@ public class VaisalaWeatherSensor extends AbstractSensorModule<VaisalaWeatherCon
         }
     }
 
-
-    private void getMeasurement()
-    {	
-    	String inputLine = null;
-    	try {
-    		
-    		/******** Get Input from Serial and Split String ************/
-    		//System.out.println(CRLF + "Got Measurement!");
-            inputLine = dataIn.readLine();
-            //System.out.println("Message: " + inputLine);
-            inputTemp = inputLine.split(",");
-            //System.out.println("Message Type: " + inputTemp[0].substring(1));
-            
-            // send message to appropriate output class to be processed
-            switch (inputTemp[0].substring(1))
-            {
+    private void processMeasurement(String line, long receivedAt) {
+        if (deviceAddress != null && !line.startsWith(deviceAddress)) return;
+        VaisalaWeatherData weather = VaisalaWeatherData.parse(line);
+        switch (line.substring(1, 3)) {
             case "R0":
-            	compOut.ParseAndSendCompMeasurement(inputLine);
-            	break;
-            case "R1":
-            	windOut.ParseAndSendWindMeasurement(inputLine);
-            	break;
-            case "R2":
-            	ptuOut.ParseAndSendPTUMeasurement(inputLine);
-            	break;
-            case "R3":
-            	precipOut.ParseAndSendPrecipMeasurement(inputLine);
-            	break;
-            case "R5":
-            	supOut.ParseAndSendSupMeasurement(inputLine);
-            	break;
-            default:
-            	break;
-            }
-            /***********************************************************/
-		}
-    	catch (Exception e)
-    	{
-			e.printStackTrace();
-		}
+                getLogger().info("Vaisala raw composite message: {}", line);
+                compOut.setData(weather);
+                break;
+            case "R1": windOut.setData(weather); break;
+            case "R2": ptuOut.setData(weather); break;
+            case "R3": precipOut.setData(weather); break;
+            case "R5": supOut.setData(weather); break;
+            default: getLogger().debug("Unknown Vaisala measurement: {}", line);
+        }
     }
 
     @Override
@@ -231,18 +236,41 @@ public class VaisalaWeatherSensor extends AbstractSensorModule<VaisalaWeatherCon
             var output = commProvider.getOutputStream();
             if (dataIn == null || output == null)
                 throw new IOException("Communication provider started without serial streams");
+            messageHandler = new MessageHandler(dataIn, output, this::processMeasurement,
+                    error -> reportError("Vaisala reader failed", error), getLogger());
+            messageHandler.start();
+            deviceAddress = sendAndReceive("?");
+            sendAndReceive(deviceAddress + "XU," + commsSettingsInit);
+            String settings = sendAndReceive(deviceAddress + "XU");
+            modelNumber = getSetting(settings, "N");
+            sendAndReceive(deviceAddress + "SU," + supervisorSettings1);
+            sendAndReceive(deviceAddress + "SU," + supervisorSettings2);
+            sendAndReceive(deviceAddress + "WU," + windSettings1);
+            sendAndReceive(deviceAddress + "WU," + windSettings2);
+            sendAndReceive(deviceAddress + "TU," + ptuSettings1);
+            sendAndReceive(deviceAddress + "TU," + ptuSettings2);
+            sendAndReceive(deviceAddress + "RU," + precipSettings1);
+            sendAndReceive(deviceAddress + "RU," + precipSettings2);
+            sendAndReceive(deviceAddress + "XU," + commsSettingsAutoASCII);
+            getLogger().info("Vaisala ready: address={}, model={}", deviceAddress, modelNumber);
         } catch (IOException | SensorHubException | RuntimeException e) {
             doStop();
             throw new SensorHubException("Error starting Vaisala after command " + lastCommand, e);
         }
     }
 
+    private static String getSetting(String response, String key) throws IOException {
+        for (String field : response.split(",")) {
+            if (field.startsWith(key + "=")) return field.substring(key.length() + 1);
+        }
+        throw new IOException("Missing " + key + " in Vaisala response: " + response);
     }
 
     @Override
     protected void afterStart() {
         // Begin heartbeat check
         started = true;
+        messageHandler.enablePublishing();
     }
 
     @Override
@@ -250,6 +278,7 @@ public class VaisalaWeatherSensor extends AbstractSensorModule<VaisalaWeatherCon
         logger.info("Stopping Vaisala Weather {} ...", getUniqueIdentifier());
 
         started = false;
+        if (messageHandler != null) messageHandler.stop();
 
         if (dataIn != null)
         {
@@ -275,6 +304,18 @@ public class VaisalaWeatherSensor extends AbstractSensorModule<VaisalaWeatherCon
                 commProvider = null;
             }
         }
+        if (messageHandler != null) {
+            try {
+                messageHandler.awaitStopped(5000);
+                messageHandler = null;
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                logger.warn("Interrupted waiting for Vaisala reader shutdown", e);
+            } catch (IOException e) {
+                logger.error("Vaisala reader shutdown failed", e);
+            }
+        }
+        dataIn = null;
         logger.info("VaisalaWeather {} stopped", getUniqueIdentifier());
     }
 

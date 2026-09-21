@@ -8,6 +8,7 @@ import net.opengis.swe.v20.DataEncoding;
 import net.opengis.swe.v20.DataRecord;
 import org.sensorhub.api.data.DataEvent;
 import org.sensorhub.impl.sensor.AbstractSensorOutput;
+import org.sensorhub.impl.sensor.vaisala.VaisalaWeatherData;
 import org.sensorhub.impl.sensor.vaisala.VaisalaWeatherSensor;
 import org.vast.swe.SWEHelper;
 import org.vast.swe.helper.GeoPosHelper;
@@ -21,12 +22,10 @@ public class VaisalaWeatherPTUOutput extends AbstractSensorOutput<VaisalaWeather
     private static final String OUTPUT_LABEL = "PTU Output";
     private static final String OUTPUT_DESCRIPTION = "Output for ptu observations from Vaisala Weather Station";
 
-
     public VaisalaWeatherPTUOutput(VaisalaWeatherSensor parentSensor)
     {
         super(OUTPUT_NAME, parentSensor);
     }
-
 
     public void doInit() {
         SWEHelper fac = new SWEHelper();
@@ -62,74 +61,21 @@ public class VaisalaWeatherPTUOutput extends AbstractSensorOutput<VaisalaWeather
         dataEncoding = fac.newTextEncoding(",", "\n");
     }
 
+    public void setData(VaisalaWeatherData weather) {
+        DataBlock dataBlock = dataStruct.createDataBlock();
+        dataBlock.setDoubleValue(0, weather.sampleTime / 1000d);
+        dataBlock.setDoubleValue(1, weather.pressure);
+        dataBlock.setDoubleValue(2, weather.temperature);
+        dataBlock.setDoubleValue(3, weather.temperatureInternal);
+        dataBlock.setDoubleValue(4, weather.relativeHumidity);
 
-    public void parseAndPublish(String message) {
-        long currentTime = System.currentTimeMillis();
+        String foiUID = parentSensor.getSamplingFoiUID();
 
-        String[] ptuMessage = message.split(","); // split sup message
+        latestRecord = dataBlock;
+        latestRecordTime = weather.sampleTime;
+        eventHandler.publish(new DataEvent(latestRecordTime, this, foiUID, dataBlock));
+    }
 
-        DataBlock dataBlock = latestRecord == null ? dataStruct.createDataBlock() : latestRecord.renew();
-        dataBlock.setDoubleValue(0, currentTime / 1000d);
-    	
-    	// parse ptu message and place data in block
-    	for (int cnt = 1; cnt < ptuMessage.length; cnt++)
-    	{
-    		/**************************** PTU Messages ****************************/
-    		if (ptuMessage[cnt].startsWith("Ta"))
-    			if (ptuMessage[cnt].endsWith("#"))
-    			{
-    				dataBlock.setDoubleValue(cnt, Double.NaN);
-    				continue;
-    			}
-    			else
-    			{
-    				dataBlock.setDoubleValue(cnt, Double.parseDouble(ptuMessage[cnt].replaceAll("[^0-9.]", "")));
-    				continue;
-    			}
-    		
-    		else if (ptuMessage[cnt].startsWith("Tp"))
-    			if (ptuMessage[cnt].endsWith("#"))
-    			{
-    				dataBlock.setDoubleValue(cnt, Double.NaN);
-    				continue;
-    			}
-    			else
-    			{
-    				dataBlock.setDoubleValue(cnt, Double.parseDouble(ptuMessage[cnt].replaceAll("[^0-9.]", "")));
-    				continue;
-    			}
-    		
-    		else if (ptuMessage[cnt].startsWith("Ua"))
-    			if (ptuMessage[cnt].endsWith("#"))
-    			{
-    				dataBlock.setDoubleValue(cnt, Double.NaN);
-    				continue;
-    			}
-    			else
-    			{
-    				dataBlock.setDoubleValue(cnt, Double.parseDouble(ptuMessage[cnt].replaceAll("[^0-9.]", "")));
-    				continue;
-    			}
-    		
-    		else if (ptuMessage[cnt].startsWith("Pa"))
-    			if (ptuMessage[cnt].endsWith("#"))
-    			{
-    				dataBlock.setDoubleValue(cnt, Double.NaN);
-    				continue;
-    			}
-    			else
-    			{
-    				dataBlock.setDoubleValue(cnt, Double.parseDouble(ptuMessage[cnt].replaceAll("[^0-9.]", "")));
-    				continue;
-    			}
-    		else
-    			getLogger().debug("Unrecognized Parameter");
-    	}
-    	
-    	latestRecord = dataBlock;
-    	latestRecordTime = System.currentTimeMillis();
-    	eventHandler.publish(new DataEvent(latestRecordTime, this, dataBlock));
-	}
 
     @Override
     public double getAverageSamplingPeriod()

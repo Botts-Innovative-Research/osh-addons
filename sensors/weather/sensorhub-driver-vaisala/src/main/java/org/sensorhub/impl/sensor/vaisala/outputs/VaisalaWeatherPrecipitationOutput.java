@@ -8,6 +8,7 @@ import net.opengis.swe.v20.DataEncoding;
 import net.opengis.swe.v20.DataRecord;
 import org.sensorhub.api.data.DataEvent;
 import org.sensorhub.impl.sensor.AbstractSensorOutput;
+import org.sensorhub.impl.sensor.vaisala.VaisalaWeatherData;
 import org.sensorhub.impl.sensor.vaisala.VaisalaWeatherSensor;
 import org.vast.swe.SWEHelper;
 
@@ -19,17 +20,6 @@ public class VaisalaWeatherPrecipitationOutput extends AbstractSensorOutput<Vais
     private static final String OUTPUT_NAME = "precipitationOutput";
     private static final String OUTPUT_LABEL = "Precipitation Output";
     private static final String OUTPUT_DESCRIPTION = "Output for precipitation observations from  Vaisala Weather Station";
-
-    private static final Map<String, Integer> TAG_TO_INDEX = Map.of(
-            "Rc", 1,  // rainAccumulation
-            "Rd", 2,  // rainDuration
-            "Ri", 3,  // rainIntensity
-            "Hc", 4,  // hailAccumulation
-            "Hd", 5,  // hailDuration
-            "Hi", 6,  // hailIntensity
-            "Rp", 7,  // rainPeakIntensity
-            "Hp", 8   // hailPeakIntensity
-    );
 
     public VaisalaWeatherPrecipitationOutput(VaisalaWeatherSensor parentSensor)
     {
@@ -63,7 +53,8 @@ public class VaisalaWeatherPrecipitationOutput extends AbstractSensorOutput<Vais
                 .addField("hailAccumulation", fac.createQuantity()
                         .definition(SWEHelper.getPropertyUri("HailAccumulation"))
                         .label("Hail Accumulation")
-                        .uom("[in_i]"))
+                        .description("Number of hail hits per square inch")
+                        .uom("1/[in_i]2"))
                 .addField("HailDuration", fac.createQuantity()
                         .definition(SWEHelper.getPropertyUri("HailDuration"))
                         .label("Hail Duration")
@@ -71,7 +62,8 @@ public class VaisalaWeatherPrecipitationOutput extends AbstractSensorOutput<Vais
                 .addField("hailIntensity", fac.createQuantity()
                         .definition(SWEHelper.getPropertyUri("HailIntensity"))
                         .label("Hail Intensity")
-                        .uom("[in_i]/h"))
+                        .description("Hail hits per square inch per hour")
+                        .uom("1/[in_i]2/h"))
                 .addField("rainPeakIntensity", fac.createQuantity()
                         .definition(SWEHelper.getPropertyUri("RainPeakIntensity"))
                         .label("Rain Peak Intensity")
@@ -79,58 +71,30 @@ public class VaisalaWeatherPrecipitationOutput extends AbstractSensorOutput<Vais
                 .addField("hailPeakIntensity", fac.createQuantity()
                         .definition(SWEHelper.getPropertyUri("HailPeakIntensity"))
                         .label("Hail Peak Intensity")
-                        .uom("[in_i]/h"))
+                        .description("Peak hail hits per square inch per hour")
+                        .uom("1/[in_i]2/h"))
                 .build();
 
         dataEncoding = fac.newTextEncoding(",", "\n");
     }
 
-    public void parseAndPublish(String precipInMessage) {
-        long currentTime = System.currentTimeMillis();
+    public void setData(VaisalaWeatherData weather) {
+        DataBlock dataBlock = dataStruct.createDataBlock();
+        dataBlock.setDoubleValue(0, weather.sampleTime / 1000d);
+        dataBlock.setDoubleValue(1, weather.rainAccumulation);
+        dataBlock.setDoubleValue(2, weather.rainDuration);
+        dataBlock.setDoubleValue(3, weather.rainIntensity);
+        dataBlock.setDoubleValue(4, weather.hailAccumulation);
+        dataBlock.setDoubleValue(5, weather.hailDuration);
+        dataBlock.setDoubleValue(6, weather.hailIntensity);
+        dataBlock.setDoubleValue(7, weather.rainPeakIntensity);
+        dataBlock.setDoubleValue(8, weather.hailPeakIntensity);
 
-        DataBlock dataBlock = latestRecord == null ? dataStruct.createDataBlock() : latestRecord.renew();
-
-        dataBlock.setDoubleValue(0, currentTime / 1000d);
-        for (int i = 0; i < TAG_TO_INDEX.get(precipInMessage); i++) {
-            dataBlock.setDoubleValue(i, Double.NaN);
-        }
-
-        String[] tokens = precipInMessage.split(",");
-        for (int i = 1; i < tokens.length; i++) {
-            String token = tokens[i];
-            if (token.length() < 2) {
-                continue;
-            }
-
-            String tag = token.substring(0, 2);
-            Integer index = TAG_TO_INDEX.get(tag);
-            if (index == null) {
-                getLogger().warn("Unrecognized precipitation field tag: '{}' in message '{}'" + tag, precipInMessage);
-                continue;
-            }
-
-            dataBlock.setDoubleValue(index, parseValue(token, tag, precipInMessage));
-        }
+        String foiUID = parentSensor.getSamplingFoiUID();
 
         latestRecord = dataBlock;
-        latestRecordTime = currentTime;
-        eventHandler.publish(new DataEvent(latestRecordTime, this, dataBlock));
-    }
-
-    private double parseValue(String token, String tag, String fullMessage)
-    {
-        if (token.endsWith("#"))
-            return Double.NaN;
-
-        try
-        {
-            return Double.parseDouble(token.replaceAll("[^0-9.]", ""));
-        }
-        catch (NumberFormatException e)
-        {
-            getLogger().warn("Could not parse value for '{}' in message: {}", tag, fullMessage);
-            return Double.NaN;
-        }
+        latestRecordTime = weather.sampleTime;
+        eventHandler.publish(new DataEvent(latestRecordTime, this, foiUID, dataBlock));
     }
 
     @Override

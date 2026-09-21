@@ -8,6 +8,7 @@ import net.opengis.swe.v20.DataEncoding;
 import net.opengis.swe.v20.DataRecord;
 import org.sensorhub.api.data.DataEvent;
 import org.sensorhub.impl.sensor.AbstractSensorOutput;
+import org.sensorhub.impl.sensor.vaisala.VaisalaWeatherData;
 import org.sensorhub.impl.sensor.vaisala.VaisalaWeatherSensor;
 import org.vast.swe.SWEHelper;
 
@@ -62,85 +63,22 @@ public class VaisalaWeatherSupervisorOutput extends AbstractSensorOutput<Vaisala
 
         dataEncoding = fac.newTextEncoding(",", "\n");
     }
-    
-    public void parseAndPublish(String message) {
-        long currentTime = System.currentTimeMillis();
 
-        String[] supMessage = message.split(","); // split sup message
+    public void setData(VaisalaWeatherData weather) {
+        DataBlock dataBlock = dataStruct.createDataBlock();
+        dataBlock.setDoubleValue(0, weather.sampleTime / 1000d);
+        dataBlock.setDoubleValue(1, weather.temperatureHeater);
+        dataBlock.setDoubleValue(2, weather.heatingVoltage);
+        dataBlock.setDoubleValue(3, weather.supplyVoltage);
+        dataBlock.setDoubleValue(4, weather.referenceVoltage);
+        dataBlock.setStringValue(5, weather.information);
 
-        DataBlock dataBlock = latestRecord == null ? dataStruct.createDataBlock() : latestRecord.renew();
-        dataBlock.setDoubleValue(0, currentTime / 1000d);
+        String foiUID = parentSensor.getSamplingFoiUID();
 
-        // parse sup message and place data in block
-    	for (int cnt = 1; cnt < supMessage.length; cnt++)
-    	{
-    		if (supMessage[cnt].startsWith("Th"))
-    			if (supMessage[cnt].endsWith("#"))
-    			{
-    				dataBlock.setDoubleValue(cnt, Double.NaN);
-    				continue;
-    			}
-    			else
-    			{
-    				dataBlock.setDoubleValue(cnt, Double.parseDouble(supMessage[cnt].replaceAll("[^0-9.]", "")));
-    				continue;
-    			}
-    		
-    		else if (supMessage[cnt].startsWith("Vh"))
-    			if (supMessage[cnt].endsWith("#"))
-    			{
-    				dataBlock.setDoubleValue(cnt, Double.NaN);
-    				continue;
-    			}
-    			else
-    			{
-    				dataBlock.setDoubleValue(cnt, Double.parseDouble(supMessage[cnt].replaceAll("[^0-9.]", "")));
-    				continue;
-    			}
-    		
-    		else if (supMessage[cnt].startsWith("Vs"))
-    			if (supMessage[cnt].endsWith("#"))
-    			{
-    				dataBlock.setDoubleValue(cnt, Double.NaN);
-    				continue;
-    			}
-    			else
-    			{
-    				dataBlock.setDoubleValue(cnt, Double.parseDouble(supMessage[cnt].replaceAll("[^0-9.]", "")));
-    				continue;
-    			}
-    		
-    		else if (supMessage[cnt].startsWith("Vr"))
-    			if (supMessage[cnt].endsWith("#"))
-    			{
-    				dataBlock.setDoubleValue(cnt, Double.NaN);
-    				continue;
-    			}
-    			else
-    			{
-    				dataBlock.setDoubleValue(cnt, Double.parseDouble(supMessage[cnt].replaceAll("[^0-9.]", "")));
-    				continue;
-    			}
-    		
-    		else if (supMessage[cnt].startsWith("Id"))
-    			if (supMessage[cnt].endsWith("#"))
-    			{
-    				dataBlock.setDoubleValue(cnt, Double.NaN);
-    				continue;
-    			}
-    			else
-    			{
-    				dataBlock.setDoubleValue(cnt, Double.parseDouble(supMessage[cnt].replaceAll("[^0-9.]", "")));
-    				continue;
-    			}
-    		else
-                getLogger().error("Unrecognized Parameter");
-    	}
-    	
-    	latestRecord = dataBlock;
-    	latestRecordTime = currentTime;
-    	eventHandler.publish(new DataEvent(latestRecordTime, this, dataBlock));
-	}
+        latestRecord = dataBlock;
+        latestRecordTime = weather.sampleTime;
+        eventHandler.publish(new DataEvent(latestRecordTime, this, foiUID, dataBlock));
+    }
 
     @Override
     public double getAverageSamplingPeriod()

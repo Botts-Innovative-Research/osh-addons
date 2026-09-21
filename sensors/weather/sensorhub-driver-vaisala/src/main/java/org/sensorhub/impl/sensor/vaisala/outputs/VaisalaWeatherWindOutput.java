@@ -5,6 +5,7 @@ import net.opengis.swe.v20.*;
 
 import org.sensorhub.api.data.DataEvent;
 import org.sensorhub.impl.sensor.AbstractSensorOutput;
+import org.sensorhub.impl.sensor.vaisala.VaisalaWeatherData;
 import org.sensorhub.impl.sensor.vaisala.VaisalaWeatherSensor;
 import org.vast.swe.SWEHelper;
 
@@ -71,96 +72,23 @@ public class VaisalaWeatherWindOutput extends AbstractSensorOutput<VaisalaWeathe
         dataEncoding = fac.newTextEncoding(",", "\n");
     }
 
-    
-    public void parseAndPublish(String message) {
-        long currentTime = System.currentTimeMillis();
 
-        String[] windMessage = message.split(","); // split wind message
+    public void setData(VaisalaWeatherData weather) {
+        DataBlock dataBlock = dataStruct.createDataBlock();
+        dataBlock.setDoubleValue(0, weather.sampleTime / 1000d);
+        dataBlock.setDoubleValue(1, weather.windDirectionMinimum);
+        dataBlock.setDoubleValue(2, weather.windDirectionAverage);
+        dataBlock.setDoubleValue(3, weather.windDirectionMaximum);
+        dataBlock.setDoubleValue(4, weather.windSpeedMinimum);
+        dataBlock.setDoubleValue(5, weather.windSpeedAverage);
+        dataBlock.setDoubleValue(6, weather.windSpeedMaximum);
 
-        DataBlock dataBlock = latestRecord == null ? dataStruct.createDataBlock() : latestRecord.renew();
-    	dataBlock.setDoubleValue(0, currentTime / 1000d);
-    	
-    	for (int cnt = 1; cnt < windMessage.length; cnt++)
-    	{
-    		if (windMessage[cnt].startsWith("Dn"))
-    			if (windMessage[cnt].endsWith("#"))
-    			{
-    				dataBlock.setDoubleValue(cnt, Double.NaN);
-    				continue;
-    			}
-    			else
-    			{
-    				dataBlock.setDoubleValue(cnt, Double.parseDouble(windMessage[cnt].replaceAll("[^0-9.]", "")));
-    				continue;
-    			}
-    		
-    		else if (windMessage[cnt].startsWith("Dm"))
-    			if (windMessage[cnt].endsWith("#"))
-    			{
-    				dataBlock.setDoubleValue(cnt, Double.NaN);
-    				continue;
-    			}
-    			else
-    			{
-    				dataBlock.setDoubleValue(cnt, Double.parseDouble(windMessage[cnt].replaceAll("[^0-9.]", "")));
-    				continue;
-    			}
-    		
-    		else if (windMessage[cnt].startsWith("Dx"))
-    			if (windMessage[cnt].endsWith("#"))
-    			{
-    				dataBlock.setDoubleValue(cnt, Double.NaN);
-    				continue;
-    			}
-    			else
-    			{
-    				dataBlock.setDoubleValue(cnt, Double.parseDouble(windMessage[cnt].replaceAll("[^0-9.]", "")));
-    				continue;
-    			}
-    		
-    		else if (windMessage[cnt].startsWith("Sn"))
-    			if (windMessage[cnt].endsWith("#"))
-    			{
-    				dataBlock.setDoubleValue(cnt, Double.NaN);
-    				continue;
-    			}
-    			else
-    			{
-    				dataBlock.setDoubleValue(cnt, Double.parseDouble(windMessage[cnt].replaceAll("[^0-9.]", "")));
-    				continue;
-    			}
-    		
-    		else if (windMessage[cnt].startsWith("Sm"))
-    			if (windMessage[cnt].endsWith("#"))
-    			{
-    				dataBlock.setDoubleValue(cnt, Double.NaN);
-    				continue;
-    			}
-    			else
-    			{
-    				dataBlock.setDoubleValue(cnt, Double.parseDouble(windMessage[cnt].replaceAll("[^0-9.]", "")));
-    				continue;
-    			}
-    		
-    		else if (windMessage[cnt].startsWith("Sx"))
-    			if (windMessage[cnt].endsWith("#"))
-    			{
-    				dataBlock.setDoubleValue(cnt, Double.NaN);
-    				continue;
-    			}
-    			else
-    			{
-    				dataBlock.setDoubleValue(cnt, Double.parseDouble(windMessage[cnt].replaceAll("[^0-9.]", "")));
-    				continue;
-    			}
-    		else
-                getLogger().error("Unrecognized Parameter");
-    	}
-    	
-    	latestRecord = dataBlock;
-    	latestRecordTime = currentTime;
-    	eventHandler.publish(new DataEvent(latestRecordTime, this, dataBlock));
-	}
+        String foiUID = parentSensor.getSamplingFoiUID();
+
+        latestRecord = dataBlock;
+        latestRecordTime = weather.sampleTime;
+        eventHandler.publish(new DataEvent(latestRecordTime, this, foiUID, dataBlock));
+    }
 
     @Override
     public double getAverageSamplingPeriod()

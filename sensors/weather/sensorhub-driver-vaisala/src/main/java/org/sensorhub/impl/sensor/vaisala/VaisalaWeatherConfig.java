@@ -10,7 +10,9 @@ import org.sensorhub.impl.module.RobustConnectionConfig;
 
 public class VaisalaWeatherConfig extends SensorConfig
 {
-	public String serialNumber = "aaa0001bb";
+    @DisplayInfo.Required
+	@DisplayInfo(label="Serial Number", desc="Unique station serial number")
+    public String serialNumber;
 	
     @DisplayInfo(label="Communication Settings", desc="Settings for selected communication port")
     public CommProviderConfig<?> commSettings;

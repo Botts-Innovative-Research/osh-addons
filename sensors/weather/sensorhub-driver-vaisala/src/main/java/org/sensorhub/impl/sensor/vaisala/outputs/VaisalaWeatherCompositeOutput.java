@@ -1,6 +1,7 @@
 package org.sensorhub.impl.sensor.vaisala.outputs;
 
 import net.opengis.swe.v20.*;
+import org.sensorhub.impl.sensor.vaisala.VaisalaWeatherData;
 
 import org.sensorhub.api.data.DataEvent;
 import org.sensorhub.impl.sensor.AbstractSensorOutput;
@@ -63,38 +64,7 @@ public class VaisalaWeatherCompositeOutput extends AbstractSensorOutput<VaisalaW
                         .definition(SWEHelper.getPropertyUri("WindSpeed"))
                         .label("Maximum Wind Speed")
                         .uom("[mi_i]/h"))
-                .addField("rainAccumulation", fac.createQuantity()
-                        .definition(SWEHelper.getPropertyUri("RainAccumulation"))
-                        .label("Rain Accumulation")
-                        .uom("[in_i]"))
-                .addField("rainDuration", fac.createQuantity()
-                        .definition(SWEHelper.getPropertyUri("RainDuration"))
-                        .label("Rain Duration")
-                        .uom("s"))
-                .addField("rainIntensity", fac.createQuantity()
-                        .definition(SWEHelper.getPropertyUri("RainIntensity"))
-                        .label("Rain Intensity")
-                        .uom("[in_i]/h"))
-                .addField("hailAccumulation", fac.createQuantity()
-                        .definition(SWEHelper.getPropertyUri("HailAccumulation"))
-                        .label("Hail Accumulation")
-                        .uom("[in_i]"))
-                .addField("HailDuration", fac.createQuantity()
-                        .definition(SWEHelper.getPropertyUri("HailDuration"))
-                        .label("Hail Duration")
-                        .uom("s"))
-                .addField("hailIntensity", fac.createQuantity()
-                        .definition(SWEHelper.getPropertyUri("HailIntensity"))
-                        .label("Hail Intensity")
-                        .uom("[in_i]/h"))
-                .addField("rainPeakIntensity", fac.createQuantity()
-                        .definition(SWEHelper.getPropertyUri("RainPeakIntensity"))
-                        .label("Rain Peak Intensity")
-                        .uom("[in_i]/h"))
-                .addField("hailPeakIntensity", fac.createQuantity()
-                        .definition(SWEHelper.getPropertyUri("HailPeakIntensity"))
-                        .label("Hail Peak Intensity")
-                        .uom("[in_i]/h"))
+
                 .addField("pressure", fac.createQuantity()
                         .definition(SWEHelper.getPropertyUri("BarometricPressure"))
                         .label("Barometric Pressure")
@@ -111,6 +81,43 @@ public class VaisalaWeatherCompositeOutput extends AbstractSensorOutput<VaisalaW
                         .definition(SWEHelper.getPropertyUri("Humidity"))
                         .label("Relative Humidity")
                         .uom("%"))
+
+                .addField("rainAccumulation", fac.createQuantity()
+                        .definition(SWEHelper.getPropertyUri("RainAccumulation"))
+                        .label("Rain Accumulation")
+                        .uom("[in_i]"))
+                .addField("rainDuration", fac.createQuantity()
+                        .definition(SWEHelper.getPropertyUri("RainDuration"))
+                        .label("Rain Duration")
+                        .uom("s"))
+                .addField("rainIntensity", fac.createQuantity()
+                        .definition(SWEHelper.getPropertyUri("RainIntensity"))
+                        .label("Rain Intensity")
+                        .uom("[in_i]/h"))
+                .addField("hailAccumulation", fac.createQuantity()
+                        .definition(SWEHelper.getPropertyUri("HailAccumulation"))
+                        .label("Hail Accumulation")
+                        .description("Number of hail hits per square inch")
+                        .uom("1/[in_i]2"))
+                .addField("HailDuration", fac.createQuantity()
+                        .definition(SWEHelper.getPropertyUri("HailDuration"))
+                        .label("Hail Duration")
+                        .uom("s"))
+                .addField("hailIntensity", fac.createQuantity()
+                        .definition(SWEHelper.getPropertyUri("HailIntensity"))
+                        .label("Hail Intensity")
+                        .description("Hail hits per square inch per hour")
+                        .uom("1/[in_i]2/h"))
+                .addField("rainPeakIntensity", fac.createQuantity()
+                        .definition(SWEHelper.getPropertyUri("RainPeakIntensity"))
+                        .label("Rain Peak Intensity")
+                        .uom("[in_i]/h"))
+                .addField("hailPeakIntensity", fac.createQuantity()
+                        .definition(SWEHelper.getPropertyUri("HailPeakIntensity"))
+                        .label("Hail Peak Intensity")
+                        .description("Peak hail hits per square inch per hour")
+                        .uom("1/[in_i]2/h"))
+
                 .addField("temperatureHeater", fac.createQuantity()
                         .definition(SWEHelper.getPropertyUri("Temperature"))
                         .label("Heater Temperature")
@@ -137,299 +144,39 @@ public class VaisalaWeatherCompositeOutput extends AbstractSensorOutput<VaisalaW
     }
 
 
-    public void parseAndPublish(String message) {
-        long currentTime = System.currentTimeMillis();
+    public void setData(VaisalaWeatherData weather) {
+        DataBlock dataBlock = dataStruct.createDataBlock();
+        dataBlock.setDoubleValue(0, weather.sampleTime / 1000d);
+        dataBlock.setDoubleValue(1, weather.windDirectionMinimum);
+        dataBlock.setDoubleValue(2, weather.windDirectionAverage);
+        dataBlock.setDoubleValue(3, weather.windDirectionMaximum);
+        dataBlock.setDoubleValue(4, weather.windSpeedMinimum);
+        dataBlock.setDoubleValue(5, weather.windSpeedAverage);
+        dataBlock.setDoubleValue(6, weather.windSpeedMaximum);
+        dataBlock.setDoubleValue(7, weather.pressure);
+        dataBlock.setDoubleValue(8, weather.temperature);
+        dataBlock.setDoubleValue(9, weather.temperatureInternal);
+        dataBlock.setDoubleValue(10, weather.relativeHumidity);
+        dataBlock.setDoubleValue(11, weather.rainAccumulation);
+        dataBlock.setDoubleValue(12, weather.rainDuration);
+        dataBlock.setDoubleValue(13, weather.rainIntensity);
+        dataBlock.setDoubleValue(14, weather.hailAccumulation);
+        dataBlock.setDoubleValue(15, weather.hailDuration);
+        dataBlock.setDoubleValue(16, weather.hailIntensity);
+        dataBlock.setDoubleValue(17, weather.rainPeakIntensity);
+        dataBlock.setDoubleValue(18, weather.hailPeakIntensity);
+        dataBlock.setDoubleValue(19, weather.temperatureHeater);
+        dataBlock.setDoubleValue(20, weather.heatingVoltage);
+        dataBlock.setDoubleValue(21, weather.supplyVoltage);
+        dataBlock.setDoubleValue(22, weather.referenceVoltage);
+        dataBlock.setStringValue(23, weather.information);
 
-        String[] compMessage = message.split(",");
+        String foiUID = parentSensor.getSamplingFoiUID();
 
-        DataBlock dataBlock = latestRecord == null ? dataStruct.createDataBlock() : latestRecord.renew();
-        dataBlock.setDoubleValue(0, currentTime / 1000d);
-
-        for (int cnt = 1; cnt < compMessage.length; cnt++)
-    	{
-    		/*************************** Wind Messages ****************************/
-    		if (compMessage[cnt].startsWith("Dn"))
-    			if (compMessage[cnt].endsWith("#"))
-    			{
-    				dataBlock.setDoubleValue(cnt, Double.NaN);
-    				continue;
-    			}
-    			else
-    			{
-    				dataBlock.setDoubleValue(cnt, Double.parseDouble(compMessage[cnt].replaceAll("[^0-9.]", "")));
-    				continue;
-    			}
-    		
-    		else if (compMessage[cnt].startsWith("Dm"))
-    			if (compMessage[cnt].endsWith("#"))
-    			{
-    				dataBlock.setDoubleValue(cnt, Double.NaN);
-    				continue;
-    			}
-    			else
-    			{
-    				dataBlock.setDoubleValue(cnt, Double.parseDouble(compMessage[cnt].replaceAll("[^0-9.]", "")));
-    				continue;
-    			}
-    		
-    		else if (compMessage[cnt].startsWith("Dx"))
-    			if (compMessage[cnt].endsWith("#"))
-    			{
-    				dataBlock.setDoubleValue(cnt, Double.NaN);
-    				continue;
-    			}
-    			else
-    			{
-    				dataBlock.setDoubleValue(cnt, Double.parseDouble(compMessage[cnt].replaceAll("[^0-9.]", "")));
-    				continue;
-    			}
-    		
-    		else if (compMessage[cnt].startsWith("Sn"))
-    			if (compMessage[cnt].endsWith("#"))
-    			{
-    				dataBlock.setDoubleValue(cnt, Double.NaN);
-    				continue;
-    			}
-    			else
-    			{
-    				dataBlock.setDoubleValue(cnt, Double.parseDouble(compMessage[cnt].replaceAll("[^0-9.]", "")));
-    				continue;
-    			}
-    		
-    		else if (compMessage[cnt].startsWith("Sm"))
-    			if (compMessage[cnt].endsWith("#"))
-    			{
-    				dataBlock.setDoubleValue(cnt, Double.NaN);
-    				continue;
-    			}
-    			else
-    			{
-    				dataBlock.setDoubleValue(cnt, Double.parseDouble(compMessage[cnt].replaceAll("[^0-9.]", "")));
-    				continue;
-    			}
-    		
-    		else if (compMessage[cnt].startsWith("Sx"))
-    			if (compMessage[cnt].endsWith("#"))
-    			{
-    				dataBlock.setDoubleValue(cnt, Double.NaN);
-    				continue;
-    			}
-    			else
-    			{
-    				dataBlock.setDoubleValue(cnt, Double.parseDouble(compMessage[cnt].replaceAll("[^0-9.]", "")));
-    				continue;
-    			}
-
-    		else if (compMessage[cnt].startsWith("Ta"))
-    			if (compMessage[cnt].endsWith("#"))
-    			{
-    				dataBlock.setDoubleValue(cnt, Double.NaN);
-    				continue;
-    			}
-    			else
-    			{
-    				dataBlock.setDoubleValue(cnt, Double.parseDouble(compMessage[cnt].replaceAll("[^0-9.]", "")));
-    				continue;
-    			}
-    		
-    		else if (compMessage[cnt].startsWith("Tp"))
-    			if (compMessage[cnt].endsWith("#"))
-    			{
-    				dataBlock.setDoubleValue(cnt, Double.NaN);
-    				continue;
-    			}
-    			else
-    			{
-    				dataBlock.setDoubleValue(cnt, Double.parseDouble(compMessage[cnt].replaceAll("[^0-9.]", "")));
-    				continue;
-    			}
-    		
-    		else if (compMessage[cnt].startsWith("Ua"))
-    			if (compMessage[cnt].endsWith("#"))
-    			{
-    				dataBlock.setDoubleValue(cnt, Double.NaN);
-    				continue;
-    			}
-    			else
-    			{
-    				dataBlock.setDoubleValue(cnt, Double.parseDouble(compMessage[cnt].replaceAll("[^0-9.]", "")));
-    				continue;
-    			}
-    		
-    		else if (compMessage[cnt].startsWith("Pa"))
-    			if (compMessage[cnt].endsWith("#"))
-    			{
-    				dataBlock.setDoubleValue(cnt, Double.NaN);
-    				continue;
-    			}
-    			else
-    			{
-    				dataBlock.setDoubleValue(cnt, Double.parseDouble(compMessage[cnt].replaceAll("[^0-9.]", "")));
-    				continue;
-    			}
-    		else if (compMessage[cnt].startsWith("Rc"))
-    			if (compMessage[cnt].endsWith("#"))
-    			{
-    				dataBlock.setDoubleValue(cnt, Double.NaN);
-    				continue;
-    			}
-    			else
-    			{
-    				dataBlock.setDoubleValue(cnt, Double.parseDouble(compMessage[cnt].replaceAll("[^0-9.]", "")));
-    				continue;
-    			}
-    		
-    		else if (compMessage[cnt].startsWith("Rd"))
-    			if (compMessage[cnt].endsWith("#"))
-    			{
-    				dataBlock.setDoubleValue(cnt, Double.NaN);
-    				continue;
-    			}
-    			else
-    			{
-    				dataBlock.setDoubleValue(cnt, Double.parseDouble(compMessage[cnt].replaceAll("[^0-9.]", "")));
-    				continue;
-    			}
-    		
-    		else if (compMessage[cnt].startsWith("Ri"))
-    			if (compMessage[cnt].endsWith("#"))
-    			{
-    				dataBlock.setDoubleValue(cnt, Double.NaN);
-    				continue;
-    			}
-    			else
-    			{
-    				dataBlock.setDoubleValue(cnt, Double.parseDouble(compMessage[cnt].replaceAll("[^0-9.]", "")));
-    				continue;
-    			}
-    		
-    		else if (compMessage[cnt].startsWith("Hc"))
-    			if (compMessage[cnt].endsWith("#"))
-    			{
-    				dataBlock.setDoubleValue(cnt, Double.NaN);
-    				continue;
-    			}
-    			else
-    			{
-    				dataBlock.setDoubleValue(cnt, Double.parseDouble(compMessage[cnt].replaceAll("[^0-9.]", "")));
-    				continue;
-    			}
-    		
-    		else if (compMessage[cnt].startsWith("Hd"))
-    			if (compMessage[cnt].endsWith("#"))
-    			{
-    				dataBlock.setDoubleValue(cnt, Double.NaN);
-    				continue;
-    			}
-    			else
-    			{
-    				dataBlock.setDoubleValue(cnt, Double.parseDouble(compMessage[cnt].replaceAll("[^0-9.]", "")));
-    				continue;
-    			}
-    		
-    		else if (compMessage[cnt].startsWith("Hi"))
-    			if (compMessage[cnt].endsWith("#"))
-    			{
-    				dataBlock.setDoubleValue(cnt, Double.NaN);
-    				continue;
-    			}
-    			else
-    			{
-    				dataBlock.setDoubleValue(cnt, Double.parseDouble(compMessage[cnt].replaceAll("[^0-9.]", "")));
-    				continue;
-    			}
-    		
-    		else if (compMessage[cnt].startsWith("Rp"))
-    			if (compMessage[cnt].endsWith("#"))
-    			{
-    				dataBlock.setDoubleValue(cnt, Double.NaN);
-    				continue;
-    			}
-    			else
-    			{
-    				dataBlock.setDoubleValue(cnt, Double.parseDouble(compMessage[cnt].replaceAll("[^0-9.]", "")));
-    				continue;
-    			}
-    		
-    		else if (compMessage[cnt].startsWith("Hp"))
-    			if (compMessage[cnt].endsWith("#"))
-    			{
-    				dataBlock.setDoubleValue(cnt, Double.NaN);
-    				continue;
-    			}
-    			else
-    			{
-    				dataBlock.setDoubleValue(cnt, Double.parseDouble(compMessage[cnt].replaceAll("[^0-9.]", "")));
-    				continue;
-    			}
-    		else if (compMessage[cnt].startsWith("Th"))
-    			if (compMessage[cnt].endsWith("#"))
-    			{
-    				dataBlock.setDoubleValue(cnt, Double.NaN);
-    				continue;
-    			}
-    			else
-    			{
-    				dataBlock.setDoubleValue(cnt, Double.parseDouble(compMessage[cnt].replaceAll("[^0-9.]", "")));
-    				continue;
-    			}
-    		
-    		else if (compMessage[cnt].startsWith("Vh"))
-    			if (compMessage[cnt].endsWith("#"))
-    			{
-    				dataBlock.setDoubleValue(cnt, Double.NaN);
-    				continue;
-    			}
-    			else
-    			{
-    				dataBlock.setDoubleValue(cnt, Double.parseDouble(compMessage[cnt].replaceAll("[^0-9.]", "")));
-    				continue;
-    			}
-    		
-    		else if (compMessage[cnt].startsWith("Vs"))
-    			if (compMessage[cnt].endsWith("#"))
-    			{
-    				dataBlock.setDoubleValue(cnt, Double.NaN);
-    				continue;
-    			}
-    			else
-    			{
-    				dataBlock.setDoubleValue(cnt, Double.parseDouble(compMessage[cnt].replaceAll("[^0-9.]", "")));
-    				continue;
-    			}
-    		
-    		else if (compMessage[cnt].startsWith("Vr"))
-    			if (compMessage[cnt].endsWith("#"))
-    			{
-    				dataBlock.setDoubleValue(cnt, Double.NaN);
-    				continue;
-    			}
-    			else
-    			{
-    				dataBlock.setDoubleValue(cnt, Double.parseDouble(compMessage[cnt].replaceAll("[^0-9.]", "")));
-    				continue;
-    			}
-    		
-    		else if (compMessage[cnt].startsWith("Id"))
-    			if (compMessage[cnt].endsWith("#"))
-    			{
-    				dataBlock.setDoubleValue(cnt, Double.NaN);
-    				continue;
-    			}
-    			else
-    			{
-    				dataBlock.setDoubleValue(cnt, Double.parseDouble(compMessage[cnt].replaceAll("[^0-9.]", "")));
-    				continue;
-    			}
-    		else
-                getLogger().error("Unrecognized Parameter");
-    	}
-    	
-    	latestRecord = dataBlock;
-    	latestRecordTime = System.currentTimeMillis();
-    	eventHandler.publish(new DataEvent(latestRecordTime, this, dataBlock));
-	}
-
+        latestRecord = dataBlock;
+        latestRecordTime = weather.sampleTime;
+        eventHandler.publish(new DataEvent(latestRecordTime, this, foiUID, dataBlock));
+    }
 
     @Override
     public double getAverageSamplingPeriod()
