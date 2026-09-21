@@ -93,6 +93,8 @@ public class ReticulumNetworkEmbeddedRuntime
             platform = "macos-aarch64";
         else if (osName.contains("mac"))
             platform = "macos-x86_64";
+        else if (arch.contains("aarch64") || arch.contains("arm64"))
+            platform = "linux-aarch64";
         else
             platform = "linux-x86_64";
         String executable = platform.startsWith("windows") ? "python.exe" : "bin/python3";
