@@ -67,7 +67,7 @@ public class ReticulumNetworkConfigTest
         assertEquals("SCENARIO-RETICULUM-EMBEDDED-IMPORT staged vendored RNS LXMF import", 0, probe.exitCode);
         assertTrue(probe.stdout, probe.stdout.contains("\"RNS\": {\"ok\": true, \"version\": \"1.5.2\""));
         assertTrue(probe.stdout, probe.stdout.contains("\"LXMF\": {\"ok\": true, \"version\": \"1.1.0\""));
-        assertTrue(probe.stdout, probe.stdout.contains("\"LXST\": {\"error\": \"ModuleNotFoundError\""));
+        assertTrue(probe.stdout, probe.stdout.contains("\"LXST\": {\"ok\": true"));
         ReticulumNetworkEmbeddedRuntime.ImportProbeResult protocol = runtime.runEmbeddedProtocolSmoke(stagedRoot, "python3");
         assertEquals("SCENARIO-RETICULUM-EMBEDDED-PROTOCOL staged vendored RNS LXMF protocol smoke", 0, protocol.exitCode);
         assertTrue(protocol.stdout, protocol.stdout.contains("\"RNS_PACKET\": {\"hashLen\": 16, \"ok\": true"));
