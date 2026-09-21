@@ -23,12 +23,18 @@ osgi {
 
 // add info to maven pom
 ext.pom >>= {
-  developers {
-    developer {
-      id 'labutler'
-      name 'Lee Butler'
-      organization 'Botts Innovative Research, Inc.'
-      organizationUrl 'http://www.botts-inc.com' 
-    } 
-  }
+    developers {
+        developer {
+            id 'labutler'
+            name 'Lee Butler'
+            organization 'Botts Innovative Research, Inc.'
+            organizationUrl 'http://www.botts-inc.com'
+        }
+        developer {
+            id 'kalynstallings'
+            name 'Kalyn Stallings'
+            organization 'GeoRobotix Innovative Research, LLC.'
+            organizationUrl 'https://georobotix.us'
+        }
+    }
 }

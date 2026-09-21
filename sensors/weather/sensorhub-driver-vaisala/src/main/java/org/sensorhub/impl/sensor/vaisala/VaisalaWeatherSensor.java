@@ -1,60 +1,46 @@
 package org.sensorhub.impl.sensor.vaisala;
 
-import java.io.IOException;
-
+import java.io.*;
 import net.opengis.sensorml.v20.IdentifierList;
 import net.opengis.sensorml.v20.Term;
-import net.opengis.swe.v20.DataComponent;
 
 import org.sensorhub.api.comm.ICommProvider;
 import org.sensorhub.api.common.SensorHubException;
+import org.sensorhub.impl.module.RobustConnection;
 import org.sensorhub.impl.sensor.AbstractSensorModule;
+import org.sensorhub.impl.sensor.vaisala.outputs.*;
 import org.vast.sensorML.SMLFactory;
 import org.vast.swe.SWEHelper;
 
-import java.io.BufferedReader;
-import java.io.BufferedWriter;
-import java.io.InputStreamReader;
-import java.io.OutputStreamWriter;
 
-
-public class VaisalaWeatherSensor extends AbstractSensorModule<VaisalaWeatherConfig>
-{ 
+public class VaisalaWeatherSensor extends AbstractSensorModule<VaisalaWeatherConfig> {
+    RobustConnection connection;
     ICommProvider<?> commProvider;
-    DataComponent weatherData;
-    BufferedReader dataIn;
-    BufferedWriter dataOut;
+    InputStream dataIn;
+    MessageHandler messageHandler;
+
     VaisalaWeatherCompositeOutput compOut;
     VaisalaWeatherWindOutput windOut;
-    VaisalaWeatherPrecipOutput precipOut;
+    VaisalaWeatherPrecipitationOutput precipOut;
     VaisalaWeatherPTUOutput ptuOut;
     VaisalaWeatherSupervisorOutput supOut;
+
     String modelNumber;
     String serialNumber = null;
-    String inputLine = null;
     String deviceAddress = null;
-    String[] checkAddr = null;
-    String[] inputTemp = null;
-    String compSupMesSettings = null;
-    String indSupMesSettings = null;
-    String compWindMesSettings = null;
-    String indWindMesSettings = null;
-    String compPTUMesSettings = null;
-    String indPTUMesSettings = null;
-    String compPrecipMesSettings = null;
-    String indPrecipMesSettings = null;
-    String[] checkMesSettings = null;
-    int cnt;
+
+    String lastCommand = null;
+
     volatile boolean started;
     public final static char CR = (char) 0x0D;
     public final static char LF = (char) 0x0A;
     public final static String CRLF = "" + CR + LF;
-    
+
     /******************** Settings Messages **************************/
     private String commsSettingsInit = "M=P,T=0,C=2,I=0,B=19200";
     private String commsSettingsAutoASCII = "M=A,I=1";
     /*****************************************************************/
-    
+
     /******************* Editable Sensor Settings ********************/
     private String supervisorSettings1 = "R=0000000000100000";
     private String supervisorSettings2 = "I=15,S=N,H=N";
@@ -65,363 +51,102 @@ public class VaisalaWeatherSensor extends AbstractSensorModule<VaisalaWeatherCon
     private String precipSettings1 = "R=0000000010110111";
     private String precipSettings2 = "I=60,U=I,S=I,M=T,Z=A";
     /*****************************************************************/
-    
-    public VaisalaWeatherSensor()
-    {        
-    }
-    
-    
+
+    public VaisalaWeatherSensor() {}
+
     @Override
-    protected void doInit() throws SensorHubException
-    {
+    protected void doInit() throws SensorHubException {
         super.doInit();
-        
-        // create data interfaces
-        compOut = new VaisalaWeatherCompositeOutput(this);
-        addOutput(compOut, false);
-        
-        windOut = new VaisalaWeatherWindOutput(this);
-        addOutput(windOut, false);
-        
-        ptuOut = new VaisalaWeatherPTUOutput(this);
-        addOutput(ptuOut, false);
-        
-        precipOut = new VaisalaWeatherPrecipOutput(this);
-        addOutput(precipOut, false);
+        if (config.commSettings == null)
+            throw new SensorHubException("No communication settings specified");
+        if (config.commandTimeoutMillis <= 0)
+            throw new SensorHubException("Command timeout must be positive");
 
-        supOut = new VaisalaWeatherSupervisorOutput(this);
-        addOutput(supOut, false);
-        
-        //System.out.println("Initializing...");
-        
-        // init comm provider
-        if (commProvider == null)
-        {
-            // we need to recreate comm provider here because it can be changed by UI
-            if (config.commSettings == null)
-                throw new SensorHubException("No communication settings specified");
-            
-            var moduleReg = getParentHub().getModuleRegistry();
-            commProvider = (ICommProvider<?>)moduleReg.loadSubModule(config.commSettings, true);
-            commProvider.start();
-
-            // connect to comm data streams
-            try
-            {
-            	dataIn = new BufferedReader(new InputStreamReader(commProvider.getInputStream()));
-                dataOut = new BufferedWriter(new OutputStreamWriter(commProvider.getOutputStream()));
-                getLogger().info("Connected to Vaisala data stream");
-
-                
-                /************************* Get Device Address *************************/
-                //System.out.println(CRLF + "Getting Device Address...");
-                dataOut.write("?" + CRLF);
-                dataOut.flush();
-                try {
-					Thread.sleep(1000);
-				} catch (InterruptedException e) {
-					// TODO Auto-generated catch block
-					e.printStackTrace();
-				}
-                
-                // get line and split to check its length
-                inputLine = dataIn.readLine();
-                checkAddr = inputLine.split(",");
-                
-                // if input line length is other than 1,
-                // it must be an automatic data message.
-                // so keep getting lines until length = 1
-                while (!(checkAddr.length == 1 && checkAddr[0].length() == 1))
-                {
-                	inputLine = dataIn.readLine();
-                	checkAddr = inputLine.split(",");
-                }
-                
-                // save dataAddress to use in commands
-                deviceAddress = inputLine;
-                System.out.println(CRLF + "Device Address = " + deviceAddress);
-                inputLine = null;
-                /***********************************************************************/
-                
-                
-                /***************** Configure Comm Protocol to ASCII Poll ***************/
-                //System.out.println(CRLF + "Configuring Comm Protocol...");
-                dataOut.write(deviceAddress + "XU," + commsSettingsInit + CRLF);
-                dataOut.flush();
-                try {
-					Thread.sleep(1000);
-				} catch (InterruptedException e) {
-					// TODO Auto-generated catch block
-					e.printStackTrace();
-				}
-                
-                // get input lines until pipe is clear, indicating polling mode is on 
-                inputLine = dataIn.readLine();
-                
-                // need dataIn.ready() = false to ensure polling mode is on 
-                while(dataIn.ready())
-                {
-                	inputLine = dataIn.readLine();
-                }
-                //System.out.println("Changed Comm Settings: " + inputLine);
-                // should be in polling mode at this point
-                inputLine = null;
-                /***********************************************************************/
-                
-                /**************************** Get Model Number *************************/
-                //System.out.println(CRLF + "Getting Model Number...");
-                dataOut.write(deviceAddress + "XU" + CRLF);
-                dataOut.flush();
-                try {
-					Thread.sleep(1000);
-				} catch (InterruptedException e) {
-					// TODO Auto-generated catch block
-					e.printStackTrace();
-				}
-                inputLine = dataIn.readLine();
-                String[] split = inputLine.split(",");
-                modelNumber = split[11].replaceAll("N=", "");
-                System.out.println("Model Number: " + modelNumber);
-                inputLine = null;
-                /***********************************************************************/
-                
-                /******************** Configure Supervisor Settings ********************/
-                //System.out.println(CRLF + "Configuring Supervisor Settings...");
-                dataOut.write(deviceAddress + "SU," + supervisorSettings1 + CRLF);
-                dataOut.flush();
-                try {
-					Thread.sleep(1000);
-				} catch (InterruptedException e) {
-					// TODO Auto-generated catch block
-					e.printStackTrace();
-				}
-                inputLine = dataIn.readLine();
-                //System.out.println("Sup Message Settings: " + inputLine);
-                
-                checkMesSettings = inputLine.split(",");
-                compSupMesSettings = checkMesSettings[1];
-                indSupMesSettings = compSupMesSettings.substring(2, 10);
-                
-                //System.out.println("Ind Sup Message Settings: " + indSupMesSettings);
-                
-                if (indSupMesSettings.length() != 8 || !indSupMesSettings.replaceAll("[01]", "").isEmpty())
-                	System.err.println("Unrecognized Supervisor Message Setting");
-                
-                compSupMesSettings = compSupMesSettings.substring(compSupMesSettings.length() - 8);
-                //System.out.println("Comp Sup Message Settings: " + compSupMesSettings);
-                
-                if (compSupMesSettings.length() != 8 || !compSupMesSettings.replaceAll("[01]", "").isEmpty())
-                	System.err.println("Unrecognized Supervisor Message Setting");
-                checkMesSettings = null;
-                
-                inputLine = null;
-                dataOut.write(deviceAddress + "SU," + supervisorSettings2 + CRLF);
-                dataOut.flush();
-                try {
-					Thread.sleep(1000);
-				} catch (InterruptedException e) {
-					// TODO Auto-generated catch block
-					e.printStackTrace();
-				}
-                inputLine = dataIn.readLine();
-                inputLine = null;
-                /***********************************************************************/
-                
-                //System.out.println(CRLF + "Configuring Wind Settings...");
-                /************************ Configure Wind Settings **********************/
-                dataOut.write(deviceAddress + "WU," + windSettings1 + CRLF);
-                dataOut.flush();
-                try {
-					Thread.sleep(1000);
-				} catch (InterruptedException e) {
-					// TODO Auto-generated catch block
-					e.printStackTrace();
-				}
-                inputLine = dataIn.readLine();
-                //System.out.println("Wind Message Settings: " + inputLine);
-                
-                checkMesSettings = inputLine.split(",");
-                compWindMesSettings = checkMesSettings[1];
-                indWindMesSettings = compWindMesSettings.substring(2, 10);
-                
-                //System.out.println("Ind Wind Message Settings: " + indWindMesSettings);
-                
-                if (indWindMesSettings.length() != 8 || !indWindMesSettings.replaceAll("[01]", "").isEmpty())
-                	System.err.println("Unrecognized Wind Message Setting");
-                
-                compWindMesSettings = compWindMesSettings.substring(compWindMesSettings.length() - 8);
-                //System.out.println("Comp Wind Message Settings: " + compWindMesSettings);
-                
-                if (compSupMesSettings.length() != 8 || !compSupMesSettings.replaceAll("[01]", "").isEmpty())
-                	System.err.println("Unrecognized Wind Message Setting");
-                checkMesSettings = null;
-                
-                inputLine = null;
-                dataOut.write(deviceAddress + "WU," + windSettings2 + CRLF);
-                dataOut.flush();
-                try {
-					Thread.sleep(1000);
-				} catch (InterruptedException e) {
-					// TODO Auto-generated catch block
-					e.printStackTrace();
-				}
-                inputLine = dataIn.readLine();
-                inputLine = null;
-                /************************************************************************/
-                
-                /************************ Configure PTU Settings ************************/
-                //System.out.println(CRLF + "Configuring PTU Settings...");
-                dataOut.write(deviceAddress + "TU," + ptuSettings1 + CRLF);
-                dataOut.flush();
-                try {
-					Thread.sleep(1000);
-				} catch (InterruptedException e) {
-					// TODO Auto-generated catch block
-					e.printStackTrace();
-				}
-                inputLine = dataIn.readLine();
-                //System.out.println("PTU Message Settings: " + inputLine);
-                
-                
-                checkMesSettings = inputLine.split(",");
-                compPTUMesSettings = checkMesSettings[1];
-                indPTUMesSettings = compPTUMesSettings.substring(2, 10);
-                
-                //System.out.println("Ind PTU Message Settings: " + indPTUMesSettings);
-                
-                if (indPTUMesSettings.length() != 8 || !indPTUMesSettings.replaceAll("[01]", "").isEmpty())
-                	System.err.println("Unrecognized Wind Message Setting");
-                
-                compPTUMesSettings = compPTUMesSettings.substring(compPTUMesSettings.length() - 8);
-                //System.out.println("Comp PTU Message Settings: " + compPTUMesSettings);
-                
-                if (compPTUMesSettings.length() != 8 || !compPTUMesSettings.replaceAll("[01]", "").isEmpty())
-                	System.err.println("Unrecognized PTU Message Setting");
-                checkMesSettings = null;
-                
-                
-                inputLine = null;
-                dataOut.write(deviceAddress + "TU," + ptuSettings2 + CRLF);
-                dataOut.flush();
-                try {
-					Thread.sleep(1000);
-				} catch (InterruptedException e) {
-					// TODO Auto-generated catch block
-					e.printStackTrace();
-				}
-                inputLine = dataIn.readLine();
-                inputLine = null;
-                /***********************************************************************/
-                
-                /************************ Configure Precip Settings ********************/
-                //System.out.println(CRLF + "Configuring Precip Settings...");
-                dataOut.write(deviceAddress + "RU," + precipSettings1 + CRLF);
-                dataOut.flush();
-                try {
-					Thread.sleep(1000);
-				} catch (InterruptedException e) {
-					// TODO Auto-generated catch block
-					e.printStackTrace();
-				}
-                inputLine = dataIn.readLine();
-                //System.out.println("Precip Message Settings: " + inputLine);
-                
-                
-                checkMesSettings = inputLine.split(",");
-                compPrecipMesSettings = checkMesSettings[1];
-                indPrecipMesSettings = compPrecipMesSettings.substring(2, 10);
-                
-                //System.out.println("Ind Precip Message Settings: " + indPrecipMesSettings);
-                
-                if (indPrecipMesSettings.length() != 8 || !indPrecipMesSettings.replaceAll("[01]", "").isEmpty())
-                	System.err.println("Unrecognized Precip Message Setting");
-                
-                compPrecipMesSettings = compPrecipMesSettings.substring(compPrecipMesSettings.length() - 8);
-                //System.out.println("Comp Precip Message Settings: " + compPrecipMesSettings);
-                
-                if (compPrecipMesSettings.length() != 8 || !compPrecipMesSettings.replaceAll("[01]", "").isEmpty())
-                	System.err.println("Unrecognized Precip Message Setting");
-                checkMesSettings = null;
-                
-                
-                inputLine = null;
-                
-                dataOut.write(deviceAddress + "RU," + precipSettings2 + CRLF);
-                dataOut.flush();
-                try {
-					Thread.sleep(1000);
-				} catch (InterruptedException e) {
-					// TODO Auto-generated catch block
-					e.printStackTrace();
-				}
-                inputLine = dataIn.readLine();
-                inputLine = null;
-                /***********************************************************************/
-                
-                /***************** Configure Comm Protocol to Auto ASCII ***************/
-                //System.out.println(CRLF + "Configuring Comm Protocol Settings...");
-                dataOut.write(deviceAddress + "XU," + commsSettingsAutoASCII + CRLF);
-                dataOut.flush();
-                try {
-					Thread.sleep(1000);
-				} catch (InterruptedException e) {
-					// TODO Auto-generated catch block
-					e.printStackTrace();
-				}
-                inputLine = dataIn.readLine();
-                //System.out.println("Changed Comm Settings: " + inputLine);
-                inputLine = null;
-                /***********************************************************************/
-            }
-            catch (IOException e)
-            {
-                throw new RuntimeException("Error while initializing communications ", e);
-            }
-        }
-        
-        // generate identifiers: use serial number from config or first characters of local ID
         serialNumber = config.serialNumber;
         if (serialNumber == null)
         {
             int endIndex = Math.min(config.id.length(), 8);
             serialNumber = config.id.substring(0, endIndex);
         }
-        // add unique ID based on serial number
-        this.uniqueID = "urn:vaisala:" + modelNumber + ":" + serialNumber;
-        this.xmlID = "VAISALA_" + modelNumber + "_" + serialNumber.toUpperCase();
-        
-        // execute initializations in each output class
-        compOut.init(compSupMesSettings,compWindMesSettings,compPTUMesSettings,compPrecipMesSettings);
-        windOut.init(indWindMesSettings);
-        ptuOut.init(indPTUMesSettings);
-        precipOut.init(indPrecipMesSettings);
-        supOut.init(indSupMesSettings);
-        //System.out.println("...Done Initializing");
+
+        // Generate identifiers
+        this.uniqueID = "urn:osh:georobotix:sensor:vaisala:" + serialNumber;
+        this.xmlID = "VAISALA_" + serialNumber.toUpperCase();
+
+        // Add outputs
+        createOutputs();
+
+        getLogger().info("Vaisala initialization complete: address={}, model={}", deviceAddress, modelNumber);
     }
-    
-    
+
+    protected void tryConnection() throws SensorHubException {
+        if(config.commSettings == null) throw new SensorHubException("No communication settings specified, please select and enter communication settings for sensor");
+
+        connection = new RobustConnection(this, config.connection, "Vaisala Weather Station") {
+            @Override
+            public boolean tryConnect() throws IOException {
+                try {
+                    var moduleReg = getParentHub().getModuleRegistry();
+                    commProvider = (ICommProvider<?>) moduleReg.loadSubModule(config.commSettings, true);
+                    commProvider.start();
+
+                    if (!commProvider.isStarted()) throw new SensorHubException("Comm provider failed to start. Check communication settings and try again.");
+
+                    return true;
+                } catch (SensorHubException e) {
+                    reportError("Cannot connect to Vaisala Weather Station", e, true);
+                    return false;
+                }
+            }
+        };
+        connection.waitForConnection();
+    }
+
+    private void createOutputs() {
+        compOut = new VaisalaWeatherCompositeOutput(this);
+        addOutput(compOut, false);
+        compOut.doInit();
+
+        windOut = new VaisalaWeatherWindOutput(this);
+        addOutput(windOut, false);
+        windOut.doInit();
+
+        ptuOut = new VaisalaWeatherPTUOutput(this);
+        addOutput(ptuOut, false);
+        ptuOut.doInit();
+
+        precipOut = new VaisalaWeatherPrecipitationOutput(this);
+        addOutput(precipOut, false);
+        precipOut.doInit();
+
+        supOut = new VaisalaWeatherSupervisorOutput(this);
+        addOutput(supOut, false);
+        supOut.doInit();
+    }
+
+    }
+
     @Override
-    protected void updateSensorDescription()
-    {
+    protected void updateSensorDescription() {
         synchronized (sensorDescLock)
         {
-        	System.out.println("Updating Sensor Description...");
-        	// set identifiers in SensorML
-            SMLFactory smlFac = new SMLFactory();            
+            super.updateSensorDescription();
+            // set identifiers in SensorML
+            SMLFactory smlFac = new SMLFactory();
 
             if (!sensorDescription.isSetDescription())
                 sensorDescription.setDescription("Vaisala Weather Transmitter " + modelNumber);
-          
+
             IdentifierList identifierList = smlFac.newIdentifierList();
             sensorDescription.addIdentification(identifierList);
 
-            Term term;            
+            Term term;
             term = smlFac.newTerm();
             term.setDefinition(SWEHelper.getPropertyUri("Manufacturer"));
             term.setLabel("Manufacturer Name");
             term.setValue("Vaisala");
             identifierList.addIdentifier(term);
-            
+
             if (modelNumber != null)
             {
                 term = smlFac.newTerm();
@@ -430,7 +155,7 @@ public class VaisalaWeatherSensor extends AbstractSensorModule<VaisalaWeatherCon
                 term.setValue(modelNumber);
                 identifierList.addIdentifier(term);
             }
-            
+
             if (serialNumber != null)
             {
                 term = smlFac.newTerm();
@@ -439,7 +164,7 @@ public class VaisalaWeatherSensor extends AbstractSensorModule<VaisalaWeatherCon
                 term.setValue(serialNumber);
                 identifierList.addIdentifier(term);
             }
-            
+
             // Long Name
             term = smlFac.newTerm();
             term.setDefinition(SWEHelper.getPropertyUri("LongName"));
@@ -454,7 +179,6 @@ public class VaisalaWeatherSensor extends AbstractSensorModule<VaisalaWeatherCon
             term.setValue("Vaisala " + modelNumber);
             identifierList.addIdentifier(term);
         }
-        System.out.println("Done Updating Sensor Description");
     }
 
 
@@ -498,65 +222,65 @@ public class VaisalaWeatherSensor extends AbstractSensorModule<VaisalaWeatherCon
 			e.printStackTrace();
 		}
     }
-    
-    @Override
-    protected void doStart() throws SensorHubException
-    {
-    	// start main measurement thread
-      Thread t = new Thread(new Runnable()
-      {
-          public void run()
-          {
-              while (started)
-              {
-            	  //System.out.println(CRLF + "Getting Measurement...");
-                  getMeasurement();
-              }
-              
-              dataIn = null;
-          }
-      });
-      
-      started = true;
-      t.start();
-    }
-    
 
     @Override
-    protected void doStop() throws SensorHubException
-    {
-    	started = false;
-      
-      if (dataIn != null)
-      {
-          try { dataIn.close(); }
-          catch (IOException e) { }
-      }
-      
-      if (commProvider != null)
-      {
-      	try {
-				commProvider.stop();
-			} catch (SensorHubException e) {
-				// TODO Auto-generated catch block
-				e.printStackTrace();
-			}
-      	commProvider = null;
-      }
+    protected void doStart() throws SensorHubException {
+        try {
+            tryConnection();
+            dataIn = commProvider.getInputStream();
+            var output = commProvider.getOutputStream();
+            if (dataIn == null || output == null)
+                throw new IOException("Communication provider started without serial streams");
+        } catch (IOException | SensorHubException | RuntimeException e) {
+            doStop();
+            throw new SensorHubException("Error starting Vaisala after command " + lastCommand, e);
+        }
     }
-    
+
+    }
 
     @Override
-    public void cleanup() throws SensorHubException
-    {
-       
+    protected void afterStart() {
+        // Begin heartbeat check
+        started = true;
     }
-    
-    
+
     @Override
-    public boolean isConnected()
-    {
-        return true;
+    protected void doStop() {
+        logger.info("Stopping Vaisala Weather {} ...", getUniqueIdentifier());
+
+        started = false;
+
+        if (dataIn != null)
+        {
+            try { dataIn.close(); }
+            catch (IOException e) { }
+        }
+
+        if (connection != null) {
+            try {
+                connection.cancel();
+            } catch (Exception e) {
+                logger.error("Error canceling connection", e);
+            }
+        }
+        if (commProvider != null) {
+            try {
+                if (commProvider.isStarted()) {
+                    commProvider.stop();
+                }
+            } catch (Exception e) {
+                logger.error("Error stopping comm module", e);
+            } finally {
+                commProvider = null;
+            }
+        }
+        logger.info("VaisalaWeather {} stopped", getUniqueIdentifier());
     }
-    
+
+    @Override
+    public boolean isConnected() {
+        return connection != null && connection.isConnected()
+                && messageHandler != null && messageHandler.isRunning();
+    }
 }
