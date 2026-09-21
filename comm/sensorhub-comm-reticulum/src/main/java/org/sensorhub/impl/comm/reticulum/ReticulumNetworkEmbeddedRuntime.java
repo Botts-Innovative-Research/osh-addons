@@ -81,26 +81,28 @@ public class ReticulumNetworkEmbeddedRuntime
             + java.io.File.pathSeparator
             + stagedRuntimeRoot.resolve("reticulum/vendor/lxst").toString()
             + java.io.File.pathSeparator
-            + stagedRuntimeRoot.resolve("reticulum/runtime/linux-x86_64/python/lib/python3.12/site-packages").toString()
-            + java.io.File.pathSeparator
-            + stagedRuntimeRoot.resolve("reticulum/runtime/linux-aarch64/python/lib/python3.12/site-packages").toString();
+            + stagedRuntimeRoot.resolve("reticulum/runtime").resolve(packagedRuntimePlatform()).resolve("python/lib/python3.12/site-packages").toString();
+    }
+
+    public String packagedRuntimePlatform()
+    {
+        String osName = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
+        String arch = System.getProperty("os.arch", "").toLowerCase(Locale.ROOT);
+        if (osName.contains("win"))
+            return "windows-x86_64";
+        else if (osName.contains("mac") && (arch.contains("aarch64") || arch.contains("arm64")))
+            return "macos-aarch64";
+        else if (osName.contains("mac"))
+            return "macos-x86_64";
+        else if (arch.contains("aarch64") || arch.contains("arm64"))
+            return "linux-aarch64";
+        else
+            return "linux-x86_64";
     }
 
     public Path packagedPythonExecutable(Path stagedRuntimeRoot)
     {
-        String osName = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
-        String arch = System.getProperty("os.arch", "").toLowerCase(Locale.ROOT);
-        String platform;
-        if (osName.contains("win"))
-            platform = "windows-x86_64";
-        else if (osName.contains("mac") && (arch.contains("aarch64") || arch.contains("arm64")))
-            platform = "macos-aarch64";
-        else if (osName.contains("mac"))
-            platform = "macos-x86_64";
-        else if (arch.contains("aarch64") || arch.contains("arm64"))
-            platform = "linux-aarch64";
-        else
-            platform = "linux-x86_64";
+        String platform = packagedRuntimePlatform();
         String executable = platform.startsWith("windows") ? "python.exe" : "bin/python3";
         return stagedRuntimeRoot.resolve("reticulum/runtime").resolve(platform).resolve("python").resolve(executable);
     }
