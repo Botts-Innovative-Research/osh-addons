@@ -1,24 +1,23 @@
 package org.sensorhub.impl.sensor.vaisala.outputs;
 
-import net.opengis.swe.v20.*;
-import org.sensorhub.impl.sensor.vaisala.VaisalaWeatherData;
-
+import net.opengis.swe.v20.DataBlock;
+import net.opengis.swe.v20.DataComponent;
+import net.opengis.swe.v20.DataEncoding;
+import net.opengis.swe.v20.DataRecord;
 import org.sensorhub.api.data.DataEvent;
 import org.sensorhub.impl.sensor.AbstractSensorOutput;
+import org.sensorhub.impl.sensor.vaisala.VaisalaWeatherData;
 import org.sensorhub.impl.sensor.vaisala.VaisalaWeatherSensor;
 import org.vast.swe.SWEHelper;
 
-public class VaisalaWeatherCompositeOutput extends AbstractSensorOutput<VaisalaWeatherSensor>
-{
-    DataRecord dataStruct;
-    DataEncoding dataEncoding;
-
+public class VaisalaWeatherCompositeOutput extends AbstractSensorOutput<VaisalaWeatherSensor> {
     private static final String OUTPUT_NAME = "weatherOutput";
     private static final String OUTPUT_LABEL = "Weather Output";
     private static final String OUTPUT_DESCRIPTION = "Output for all weather observations from Vaisala Weather Station";
+    DataRecord dataStruct;
+    DataEncoding dataEncoding;
 
-    public VaisalaWeatherCompositeOutput(VaisalaWeatherSensor parentSensor)
-    {
+    public VaisalaWeatherCompositeOutput(VaisalaWeatherSensor parentSensor) {
         super(OUTPUT_NAME, parentSensor);
     }
 
@@ -179,23 +178,20 @@ public class VaisalaWeatherCompositeOutput extends AbstractSensorOutput<VaisalaW
     }
 
     @Override
-    public double getAverageSamplingPeriod()
-    {
-    	// sample every 1 second
+    public double getAverageSamplingPeriod() {
+        // sample every 1 second
         return 1.0;
     }
 
 
     @Override
-    public DataComponent getRecordDescription()
-    {
+    public DataComponent getRecordDescription() {
         return dataStruct;
     }
 
 
     @Override
-    public DataEncoding getRecommendedEncoding()
-    {
+    public DataEncoding getRecommendedEncoding() {
         return dataEncoding;
     }
 }

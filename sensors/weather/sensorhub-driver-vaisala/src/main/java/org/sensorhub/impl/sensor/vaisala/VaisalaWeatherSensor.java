@@ -10,10 +10,6 @@ import org.sensorhub.impl.module.RobustConnection;
 import org.sensorhub.impl.sensor.AbstractSensorModule;
 import org.sensorhub.impl.sensor.vaisala.outputs.*;
 import org.vast.ogc.om.SamplingPoint;
-import net.opengis.gml.v32.impl.GMLFactory;
-import org.vast.swe.SWEConstants;
-import java.nio.charset.StandardCharsets;
-import java.util.UUID;
 import org.vast.sensorML.SMLFactory;
 import org.vast.swe.SWEHelper;
 
@@ -42,7 +38,6 @@ public class VaisalaWeatherSensor extends AbstractSensorModule<VaisalaWeatherCon
     volatile boolean started;
     public final static char CR = (char) 0x0D;
     public final static char LF = (char) 0x0A;
-    public final static String CRLF = "" + CR + LF;
 
     /******************** Settings Messages **************************/
     private String commsSettingsInit = "M=P,T=0,C=2,I=0,B=19200";
@@ -278,7 +273,6 @@ public class VaisalaWeatherSensor extends AbstractSensorModule<VaisalaWeatherCon
         logger.info("Stopping Vaisala Weather {} ...", getUniqueIdentifier());
 
         started = false;
-        if (messageHandler != null) messageHandler.stop();
 
         if (dataIn != null)
         {
@@ -304,16 +298,10 @@ public class VaisalaWeatherSensor extends AbstractSensorModule<VaisalaWeatherCon
                 commProvider = null;
             }
         }
+
         if (messageHandler != null) {
-            try {
-                messageHandler.awaitStopped(5000);
-                messageHandler = null;
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                logger.warn("Interrupted waiting for Vaisala reader shutdown", e);
-            } catch (IOException e) {
-                logger.error("Vaisala reader shutdown failed", e);
-            }
+            messageHandler.stop();
+            messageHandler = null;
         }
         dataIn = null;
         logger.info("VaisalaWeather {} stopped", getUniqueIdentifier());
