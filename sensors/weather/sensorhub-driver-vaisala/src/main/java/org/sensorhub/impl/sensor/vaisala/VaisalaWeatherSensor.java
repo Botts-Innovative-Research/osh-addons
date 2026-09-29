@@ -64,12 +64,15 @@ public class VaisalaWeatherSensor extends AbstractSensorModule<VaisalaWeatherCon
             throw new SensorHubException("No communication settings specified");
         if (config.commandTimeoutMillis <= 0)
             throw new SensorHubException("Command timeout must be positive");
-
-        serialNumber = config.serialNumber == null ? null : config.serialNumber.trim();
+        if (config.serialNumber == null)
+            throw new SensorHubException("No serial number specified");
+        serialNumber = config.serialNumber.trim();
 
         // Generate identifiers
         this.uniqueID = "urn:osh:georobotix:sensor:vaisala:" + serialNumber;
         this.xmlID = "VAISALA_" + serialNumber.toUpperCase();
+
+        tryConnection();
 
         // Add outputs
         createOutputs();
@@ -136,14 +139,6 @@ public class VaisalaWeatherSensor extends AbstractSensorModule<VaisalaWeatherCon
         foi.setHostedProcedureUID(uniqueID);
         foi.setName(config.name == null ? "Vaisala" : config.name);
         foi.setDescription("Vaisala weather observations");
-//        var location = config.getLocation();
-//        if (location != null) {
-//            var point = new GMLFactory(true).newPoint();
-//            point.setSrsName(SWEConstants.REF_FRAME_4979);
-//            point.setSrsDimension(3);
-//            point.setPos(new double[] {location.lat, location.lon, location.alt});
-//            foi.setShape(point);
-//        }
         synchronized (foiMap) {
             foiMap.clear();
             addFoi(foi);
@@ -223,35 +218,38 @@ public class VaisalaWeatherSensor extends AbstractSensorModule<VaisalaWeatherCon
         }
     }
 
+
     @Override
     protected void doStart() throws SensorHubException {
-        try {
-            tryConnection();
-            dataIn = commProvider.getInputStream();
-            var output = commProvider.getOutputStream();
-            if (dataIn == null || output == null)
-                throw new IOException("Communication provider started without serial streams");
-            messageHandler = new MessageHandler(dataIn, output, this::processMeasurement,
-                    error -> reportError("Vaisala reader failed", error), getLogger());
-            messageHandler.start();
-            deviceAddress = sendAndReceive("?");
-            sendAndReceive(deviceAddress + "XU," + commsSettingsInit);
-            String settings = sendAndReceive(deviceAddress + "XU");
-            modelNumber = getSetting(settings, "N");
-            sendAndReceive(deviceAddress + "SU," + supervisorSettings1);
-            sendAndReceive(deviceAddress + "SU," + supervisorSettings2);
-            sendAndReceive(deviceAddress + "WU," + windSettings1);
-            sendAndReceive(deviceAddress + "WU," + windSettings2);
-            sendAndReceive(deviceAddress + "TU," + ptuSettings1);
-            sendAndReceive(deviceAddress + "TU," + ptuSettings2);
-            sendAndReceive(deviceAddress + "RU," + precipSettings1);
-            sendAndReceive(deviceAddress + "RU," + precipSettings2);
-            sendAndReceive(deviceAddress + "XU," + commsSettingsAutoASCII);
-            getLogger().info("Vaisala ready: address={}, model={}", deviceAddress, modelNumber);
-        } catch (IOException | SensorHubException | RuntimeException e) {
-            doStop();
-            throw new SensorHubException("Error starting Vaisala after command " + lastCommand, e);
+        if (messageHandler == null || !messageHandler.isRunning()) {
+            try {
+                tryConnection();
+                dataIn = commProvider.getInputStream();
+                var output = commProvider.getOutputStream();
+                if (dataIn == null || output == null)
+                    throw new IOException("Communication provider started without serial streams");
+                messageHandler = new MessageHandler(dataIn, output, this::processMeasurement);
+                messageHandler.start();
+                deviceAddress = sendAndReceive("?");
+                sendAndReceive(deviceAddress + "XU," + commsSettingsInit);
+                String settings = sendAndReceive(deviceAddress + "XU");
+                modelNumber = getSetting(settings, "N");
+                sendAndReceive(deviceAddress + "SU," + supervisorSettings1);
+                sendAndReceive(deviceAddress + "SU," + supervisorSettings2);
+                sendAndReceive(deviceAddress + "WU," + windSettings1);
+                sendAndReceive(deviceAddress + "WU," + windSettings2);
+                sendAndReceive(deviceAddress + "TU," + ptuSettings1);
+                sendAndReceive(deviceAddress + "TU," + ptuSettings2);
+                sendAndReceive(deviceAddress + "RU," + precipSettings1);
+                sendAndReceive(deviceAddress + "RU," + precipSettings2);
+                sendAndReceive(deviceAddress + "XU," + commsSettingsAutoASCII);
+                getLogger().info("Vaisala ready: address={}, model={}", deviceAddress, modelNumber);
+            } catch (IOException | SensorHubException | RuntimeException e) {
+                throw new SensorHubException("Error configuring Vaisala after command " + lastCommand, e);
+            }
         }
+        started = true;
+        messageHandler.enablePublishing();
     }
 
     private static String getSetting(String response, String key) throws IOException {
@@ -261,18 +259,13 @@ public class VaisalaWeatherSensor extends AbstractSensorModule<VaisalaWeatherCon
         throw new IOException("Missing " + key + " in Vaisala response: " + response);
     }
 
-    @Override
-    protected void afterStart() {
-        // Begin heartbeat check
-        started = true;
-        messageHandler.enablePublishing();
-    }
 
     @Override
     protected void doStop() {
         logger.info("Stopping Vaisala Weather {} ...", getUniqueIdentifier());
 
         started = false;
+        if (messageHandler != null) messageHandler.stop();
 
         if (dataIn != null)
         {
