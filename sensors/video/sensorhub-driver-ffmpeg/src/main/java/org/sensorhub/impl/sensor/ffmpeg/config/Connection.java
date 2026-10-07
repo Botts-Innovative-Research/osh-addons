@@ -12,7 +12,6 @@
 package org.sensorhub.impl.sensor.ffmpeg.config;
 
 import org.sensorhub.api.config.DisplayInfo;
-import org.sensorhub.impl.sensor.ffmpeg.config.streamfilter.StreamFilter;
 
 /**
  * Configuration settings for the FFmpeg driver exposed via the OpenSensorHub Admin panel.
@@ -47,11 +46,4 @@ public class Connection {
 
     @DisplayInfo(label = "Register Devices", desc = "Registers devices for the video stream. Set true if input is not from a network stream or file (e.g. dshow).")
     public boolean registerDevices = false;
-
-    /**
-     * Stream filter
-     */
-    @DisplayInfo.Required
-    @DisplayInfo(label = "Stream Filter", desc = "Used to filter streams for output.")
-    public StreamFilter streamFilter;
 }
