@@ -38,6 +38,8 @@ import org.slf4j.Logger;
  */
 public class WebSocketProxy implements WebSocketListener
 {
+    static final long MAX_BINARY_MESSAGE_SIZE = 1024*1024;
+    
     final InetSocketAddress mqttHost;
     final Logger log;
     Session session;
@@ -60,6 +62,7 @@ public class WebSocketProxy implements WebSocketListener
         try
         {
             this.session = session;
+            session.setMaxBinaryMessageSize(MAX_BINARY_MESSAGE_SIZE);
             WebSocketUtils.logOpen(session, log);
             
             mqttSocket = AsynchronousSocketChannel.open();

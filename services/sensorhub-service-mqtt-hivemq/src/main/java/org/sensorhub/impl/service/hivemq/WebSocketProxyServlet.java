@@ -21,13 +21,7 @@ import javax.servlet.ServletException;
 import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
-import org.eclipse.jetty.websocket.api.WebSocketBehavior;
-import org.eclipse.jetty.websocket.api.WebSocketPolicy;
-import org.eclipse.jetty.websocket.server.WebSocketServerFactory;
-import org.eclipse.jetty.websocket.servlet.ServletUpgradeRequest;
-import org.eclipse.jetty.websocket.servlet.ServletUpgradeResponse;
-import org.eclipse.jetty.websocket.servlet.WebSocketCreator;
-import org.eclipse.jetty.websocket.servlet.WebSocketServletFactory;
+import org.eclipse.jetty.websocket.server.JettyWebSocketServerContainer;
 import org.slf4j.Logger;
 import org.vast.util.Asserts;
 
@@ -48,7 +42,7 @@ public class WebSocketProxyServlet extends HttpServlet
     
     final InetSocketAddress mqttServerAddress;
     final Logger log;
-    WebSocketServletFactory wsFactory;
+    transient JettyWebSocketServerContainer wsContainer;
 
 
     public WebSocketProxyServlet(InetSocketAddress mqttServerAddress, Logger logger)
@@ -63,17 +57,13 @@ public class WebSocketProxyServlet extends HttpServlet
     {
         super.init(config);
 
-        // create websocket factory
-        try
+        // get websocket container (lifecycle is managed by Jetty, no need to start/stop it)
+        wsContainer = JettyWebSocketServerContainer.getContainer(getServletContext());
+        if (wsContainer == null)
         {
-            WebSocketPolicy wsPolicy = new WebSocketPolicy(WebSocketBehavior.SERVER);
-            wsPolicy.setMaxBinaryMessageSize(1024*1024);
-            wsFactory = new WebSocketServerFactory(getServletContext(), wsPolicy);
-            wsFactory.start();
-        }
-        catch (Exception e)
-        {
-            throw new ServletException("Cannot initialize websocket factory", e);
+            throw new ServletException("WebSocket container not available. " +
+                "JettyWebSocketServletContainerInitializer.configure() must be called " +
+                "on the ServletContextHandler before the server is started");
         }
     }
 
@@ -81,16 +71,16 @@ public class WebSocketProxyServlet extends HttpServlet
     @Override
     public void destroy()
     {
-        // destroy websocket factory
-        try
-        {
-            if (wsFactory != null)
-                wsFactory.stop();
-        }
-        catch (Exception e)
-        {
-            log.error("Cannot stop websocket factory", e);
-        }
+        // nothing to stop: websocket container is stopped together with the servlet context
+        wsContainer = null;
+        super.destroy();
+    }
+
+
+    protected boolean isWebSocketUpgradeRequest(HttpServletRequest req)
+    {
+        return "GET".equalsIgnoreCase(req.getMethod()) &&
+               "websocket".equalsIgnoreCase(req.getHeader("Upgrade"));
     }
 
 
@@ -98,31 +88,29 @@ public class WebSocketProxyServlet extends HttpServlet
     protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException
     {
         // check if we have an upgrade request for websockets
-        if (wsFactory.isUpgradeRequest(req, resp))
+        if (isWebSocketUpgradeRequest(req))
         {
-            wsFactory.acceptWebSocket(new WebSocketCreator() {
-                @Override
-                public Object createWebSocket(ServletUpgradeRequest req, ServletUpgradeResponse resp)
+            boolean upgraded = wsContainer.upgrade((upgradeReq, upgradeResp) -> {
+                try
                 {
-                    try
+                    if (!upgradeReq.getSubProtocols().contains(MQTT_SUB_PROTOCOL))
                     {
-                        if (!req.getSubProtocols().contains(MQTT_SUB_PROTOCOL))
-                        {
-                            resp.sendError(405, "Only 'mqtt' sub-protocol is supported by this endpoint");
-                            return null;
-                        }
-                        
-                        resp.setAcceptedSubProtocol(MQTT_SUB_PROTOCOL);
-                        return new WebSocketProxy(mqttServerAddress, log);
-                    }
-                    catch (IOException e)
-                    {
-                        log.error("Error creating websocket", e);
+                        upgradeResp.sendError(405, "Only 'mqtt' sub-protocol is supported by this endpoint");
                         return null;
                     }
+                    
+                    upgradeResp.setAcceptedSubProtocol(MQTT_SUB_PROTOCOL);
+                    return new WebSocketProxy(mqttServerAddress, log);
+                }
+                catch (IOException e)
+                {
+                    log.error("Error creating websocket", e);
+                    return null;
                 }
             }, req, resp);
             
+            if (!upgraded && !resp.isCommitted())
+                resp.sendError(400, "WebSocket upgrade failed");
             return;
         }
         
