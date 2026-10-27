@@ -10,6 +10,9 @@ dependencies {
   // Force upgrade on dependency to address secuirty vulnerabilities
   // This lib is required by org.apache.oltu.oauth2:org.apache.oltu.oauth2.client:1.0.2
   embeddedImpl 'org.json:json:20240303'
+  // Force upgrade on dependency to address a security vulnerability (GHSA-r7wm-3cxj-wff9).
+  // Transitively pulled in at 2.15.0 by com.auth0:jwks-rsa:0.22.1's jackson-databind dependency.
+  embeddedImpl 'com.fasterxml.jackson.core:jackson-core:2.18.8'
 }
 
 // add info to OSGi manifest
