@@ -1,0 +1,38 @@
+description = 'Puppy Pi Driver'
+ext.details = "Driver for Puppy Pi outputs and controls"
+version = '1.0.0'
+
+dependencies {
+    implementation 'org.sensorhub:sensorhub-core:' + oshCoreVersion
+//    implementation project(':sensorhub-service-video')
+    testImplementation('junit:junit:4.13.1')
+    implementation project(':sensorhub-driver-videocam')
+}
+
+// exclude tests requiring connection to the sensor
+// these have to be run manually
+//      If tests are to be excluded list them here as follows
+//          exclude '**/TestNameClass.class'
+test {
+    useJUnit()
+}
+
+// add info to OSGi manifest
+osgi {
+    manifest {
+        attributes ('Bundle-Vendor': 'Botts Inc')
+        attributes ('Bundle-Activator': 'com.sample.impl.sensor.puppypi.Activator')
+    }
+}
+
+// add info to maven pom
+ext.pom >>= {
+    developers {
+        developer {
+            id 'pkhaisman'
+            name 'Philip Khaisman'
+            organization 'Botts Innovative Research, Inc.'
+            organizationUrl 'http://www.botts-inc.com'
+        }
+    }
+}
