@@ -232,12 +232,14 @@ public class MeshtasticSensor extends AbstractSensorModule<Config> {
 
 
     private void processNextPacket(InputStream in) throws IOException {
-        // CHECK TO SEE IF PACKET SHOULD PROCESS
-        if (!findStartOfPacket(in)){
-            return;
+        // Serial connections use 0x94/0xC3 frame headers; BLE uses length-prefixed messages only
+        if (!config.bleConnection) {
+            if (!findStartOfPacket(in)) {
+                return;
+            }
         }
 
-        // GET LENGTHH OF PACKET AND CHECK THAT IT MATCHES STYLE
+        // GET LENGTH OF PACKET AND CHECK THAT IT MATCHES STYLE
         int length = readPacketLength(in);
         if (length <= 0 || length > 512) {
             getLogger().info("Invalid length, resyncing...");
@@ -328,7 +330,7 @@ public class MeshtasticSensor extends AbstractSensorModule<Config> {
             Future<String> future = fetchExecutor.submit(() -> {
                 try (InputStream in = commProvider.getInputStream()) {
                     while (!Thread.currentThread().isInterrupted()) {
-                        if (!findStartOfPacket(in)) continue;
+                        if (!config.bleConnection && !findStartOfPacket(in)) continue;
                         int length = readPacketLength(in);
                         if (length <= 0 || length > 512) continue;
                         byte[] payload = readPayload(in, length);
@@ -362,22 +364,23 @@ public class MeshtasticSensor extends AbstractSensorModule<Config> {
     public boolean sendMessage(MeshProtos.ToRadio message) {
         byte[] bytes = message.toByteArray();
 
-        int len = bytes.length;
-        byte[] header = new byte[4];
-        header[0] = (byte) START1;
-        header[1] = (byte) START2;
-        header[2] = (byte) ((len >> 8) & 0xFF);
-        header[3] = (byte) (len & 0xFF);
-
         try {
             OutputStream os = commProvider.getOutputStream();
-            os.write(header);
+            if (!config.bleConnection) {
+                // Serial framing: magic bytes + 2-byte length prefix
+                byte[] header = new byte[4];
+                header[0] = (byte) START1;
+                header[1] = (byte) START2;
+                header[2] = (byte) ((bytes.length >> 8) & 0xFF);
+                header[3] = (byte) (bytes.length & 0xFF);
+                os.write(header);
+            }
+            // BLE: raw protobuf only — the comm provider handles GATT framing
             os.write(bytes);
             os.flush();
-            // if it sends
             return true;
         } catch (IOException e) {
-            getLogger().error("Failed to send handshake message", e);
+            getLogger().error("Failed to send message", e);
             return false;
         }
 
