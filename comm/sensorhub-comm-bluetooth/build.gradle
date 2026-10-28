@@ -1,21 +1,5 @@
-buildscript {
-    repositories {
-        mavenCentral()
-        gradlePluginPortal()
-    }
-    dependencies {
-        classpath 'org.jetbrains.kotlin:kotlin-gradle-plugin:2.0.20'
-    }
-}
-
-apply plugin: 'org.jetbrains.kotlin.jvm'
-
 description = 'BLE Communication Provider'
-ext.details = 'Cross-platform Bluetooth Low Energy communication provider using Kable'
-
-kotlin {
-    jvmToolchain(17)
-}
+ext.details = 'Cross-platform Bluetooth Low Energy communication provider using SimpleBLE'
 
 def thisProjectDir = projectDir
 rootProject.allprojects {
@@ -26,8 +10,7 @@ rootProject.allprojects {
 
 dependencies {
     implementation 'org.sensorhub:sensorhub-core:' + oshCoreVersion
-    embeddedImpl 'com.juul.kable:kable-core-jvm:0.42.0'
-    embeddedImpl 'org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm:1.9.0'
+    embeddedImpl 'org.simpleble:simplejavable:1.1.0'
 }
 
 osgi {
