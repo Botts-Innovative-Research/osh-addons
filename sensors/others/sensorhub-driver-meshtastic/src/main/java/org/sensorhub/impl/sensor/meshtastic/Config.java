@@ -35,4 +35,9 @@ public class Config extends SensorConfig {
     @DisplayInfo(desc = "Comm settings used to interface over serial, UDP, TCP, etc.")
     public CommProviderConfig<?> commSettings;
 
+    @DisplayInfo(label = "BLE Connection",
+            desc = "Enable when using a BLE comm provider. Disables serial framing (0x94/0xC3 headers) " +
+                    "and uses length-prefixed messages instead.")
+    public boolean bleConnection = false;
+
 }
