@@ -11,7 +11,10 @@
  ******************************* END LICENSE BLOCK ***************************/
 package org.sensorhub.impl.sensor.meshtastic;
 
+import com.botts.impl.comm.bluetooth.BleCommProvider;
 import org.meshtastic.proto.MeshProtos;
+import org.simplejavable.BluetoothUUID;
+import org.simplejavable.Peripheral;
 import org.sensorhub.api.comm.ICommProvider;
 import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.impl.sensor.AbstractSensorModule;
@@ -23,30 +26,50 @@ import java.io.OutputStream;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * Driver implementation for the sensor.
+ * Driver implementation for Meshtastic radios.
  * <p>
- * This class is responsible for providing sensor information, managing output registration,
- * and performing initialization and shutdown for the driver and its outputs.
+ * Supports two connection modes:
+ * <ul>
+ *   <li><b>Serial</b> — via any ICommProvider (e.g., JSSC). Uses 0x94/0xC3 framed packets.</li>
+ *   <li><b>BLE</b> — via BleCommProvider. The driver performs GATT operations directly
+ *       on the Meshtastic BLE service (no stream framing needed).</li>
+ * </ul>
  */
 public class MeshtasticSensor extends AbstractSensorModule<Config> {
     static final String UID_PREFIX = "urn:osh:sensor:georobotix:meshtastic:";
     static final String XML_PREFIX = "meshtastic";
 
-    String localMeshNodeId = null; // discovered from radio during startup via myInfo
-
+    String localMeshNodeId = null;
 
     private ICommProvider<?> commProvider;
     private ExecutorService executor = Executors.newSingleThreadExecutor();
     AtomicBoolean isProcessing = new AtomicBoolean(false);
 
-    // MESHTASTIC MESSAGE VARIABLES
+    // SERIAL FRAMING CONSTANTS
     private static final int START1 = 0x94;
     private static final int START2 = 0xC3;
+
+    // MESHTASTIC BLE GATT UUIDs
+    private static final String MESH_SERVICE_UUID   = "6ba1b218-15a8-461f-9fa8-5dcae273eafd";
+    private static final String MESH_TORADIO_UUID   = "f75c76d2-129e-4dad-a1dd-7866124401e7";
+    private static final String MESH_FROMRADIO_UUID = "2c55e69e-4993-11ed-b878-0242ac120002";
+    private static final String MESH_FROMNUM_UUID   = "ed9da18c-a800-4f66-a670-aa7547e34453";
+
+    // BLE fields — only used when config.bleConnection == true
+    private Peripheral blePeripheral;
+    private BluetoothUUID bleSvcUuid;
+    private BluetoothUUID bleToRadioUuid;
+    private BluetoothUUID bleFromRadioUuid;
+    private BluetoothUUID bleFromNumUuid;
+    private final LinkedBlockingQueue<byte[]> bleMessageQueue = new LinkedBlockingQueue<>();
+    private Thread bleReaderThread;
+    private final Object bleReadSignal = new Object();
 
     // DEFINE meshtastic protobuf handler
     MeshtasticHandler meshtasticHandler;
@@ -74,9 +97,9 @@ public class MeshtasticSensor extends AbstractSensorModule<Config> {
         // Use manual serial number if provided, otherwise use the discovered radio node ID
         String id;
         if (config.serialNumber != null && !config.serialNumber.isBlank()) {
-            id = config.serialNumber; //Use the Serial Number if someone writes it in the admin panel
+            id = config.serialNumber;
         } else if (localMeshNodeId != null) {
-            id = localMeshNodeId; // If serial number is left black, driver will automatically fetch the meshtastic node id of the radio being used
+            id = localMeshNodeId;
         } else {
             throw new SensorHubException("Could not determine radio node ID — check comm settings and ensure the radio is connected");
         }
@@ -99,46 +122,42 @@ public class MeshtasticSensor extends AbstractSensorModule<Config> {
         genericOutput = new MeshtasticOutputGeneric(this);
         addOutput(genericOutput, false);
         genericOutput.doInit();
-        
+
         // INITIALIZE HANDLER
         meshtasticHandler = new MeshtasticHandler(this);
 
         // INITIALIZE CONTROL
         meshtasticControlTextMessage = new MeshtasticControlTextMessage(this);
         addControlInput(meshtasticControlTextMessage);
-
     }
 
     @Override
     public void doStart() throws SensorHubException {
         super.doStart();
 
-        // CHECK COMM PROVIDER HAS BEEN SELECTED IN ADMIN PANEL
-        if (commProvider != null){
-            commProvider.start();
-            try {
-                Thread.sleep(100);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                throw new SensorHubException("Thread interrupted while starting comm provider", e);
-            }
-
-            // send "handshake" to start receiving protobufs
-            MeshProtos.ToRadio handshake = MeshProtos.ToRadio.newBuilder()
-                    // TODO: Verify response ID in future if needed
-                    .setWantConfigId(0)
-                    .build();
-
-            sendMessage(handshake);
-
-            // BEGIN PROCESSING DATA
-            if (executor == null || executor.isShutdown() || executor.isTerminated()) {
-                executor = Executors.newSingleThreadExecutor();
-            }
-            startProcessing();
-        } else {
+        if (commProvider == null) {
             throw new SensorHubException("No communication provider configured");
         }
+
+        commProvider.start();
+        try { Thread.sleep(100); } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new SensorHubException("Thread interrupted while starting comm provider", e);
+        }
+
+        // BLE: get the peripheral and set up GATT
+        if (config.bleConnection) {
+            initBle();
+        }
+
+        // Send handshake to start receiving protobufs
+        sendMessage(MeshProtos.ToRadio.newBuilder().setWantConfigId(0).build());
+
+        // BEGIN PROCESSING DATA
+        if (executor == null || executor.isShutdown() || executor.isTerminated()) {
+            executor = Executors.newSingleThreadExecutor();
+        }
+        startProcessing();
     }
 
     @Override
@@ -147,12 +166,17 @@ public class MeshtasticSensor extends AbstractSensorModule<Config> {
 
         isProcessing.set(false);
 
-        // 1. Close comm first → this unblocks read()
+        // BLE: clean up notifications and reader thread
+        if (config.bleConnection) {
+            cleanupBle();
+        }
+
+        // Close comm provider — this also unblocks serial read()
         if (commProvider != null) {
             commProvider.stop();
         }
 
-        // 2. Then shutdown executor
+        // Shutdown processing executor
         if (executor != null) {
             executor.shutdownNow();
             try {
@@ -170,56 +194,177 @@ public class MeshtasticSensor extends AbstractSensorModule<Config> {
         return commProvider != null && commProvider.isInitialized();
     }
 
-    // THIS METHOD IS UTILIZED IN ALL THE OUTPUTS. IT CREATES A FOI USING PARENT SENSOR METHOD
-    String addFoi( String meshNodeId) {
-        String foiUID = UID_PREFIX + ":foi:" + meshNodeId;
+    // ========================= BLE SETUP/TEARDOWN =========================
 
-        if (!foiMap.containsKey(foiUID))
-        {
-            // Generate small SensorML for FOI (in this case the system is the FOI)
-            MovingFeature foi = new MovingFeature();
-            foi.setId(meshNodeId);
-            foi.setUniqueIdentifier(foiUID);
-            foi.setName(meshNodeId);
-            foi.setDescription("meshtastic Node " + meshNodeId);
-
-            // REGISTER FOI
-            addFoi(foi);
-
-            getLogger().debug("New meshtastic Node added as FOI: {}", foiUID);
-
+    /**
+     * Initialize BLE GATT — get the peripheral from the comm provider,
+     * cache UUID objects, subscribe to fromNum notifications, and start
+     * the reader thread.
+     */
+    private void initBle() throws SensorHubException {
+        if (!(commProvider instanceof BleCommProvider)) {
+            throw new SensorHubException("BLE connection is enabled but the comm provider is not a BLE provider");
         }
 
-        return foiUID;
+        blePeripheral = ((BleCommProvider) commProvider).getPeripheral();
+        if (blePeripheral == null) {
+            throw new SensorHubException("BLE peripheral is not connected");
+        }
+
+        // Cache UUID objects to avoid allocation in hot paths
+        bleSvcUuid = new BluetoothUUID(MESH_SERVICE_UUID);
+        bleToRadioUuid = new BluetoothUUID(MESH_TORADIO_UUID);
+        bleFromRadioUuid = new BluetoothUUID(MESH_FROMRADIO_UUID);
+        bleFromNumUuid = new BluetoothUUID(MESH_FROMNUM_UUID);
+
+        // Start the reader thread BEFORE subscribing to notifications
+        bleMessageQueue.clear();
+        bleReaderThread = new Thread(this::bleReaderLoop, "Mesh-BLE-reader");
+        bleReaderThread.setDaemon(true);
+        bleReaderThread.start();
+
+        // Subscribe to fromNum notifications — signals that new data is available
+        // The callback runs on SimpleBLE's native thread, so it must NOT call
+        // peripheral.read() — it just signals the reader thread.
+        blePeripheral.notify(bleSvcUuid, bleFromNumUuid, data -> {
+            getLogger().debug("BLE fromNum notification received");
+            synchronized (bleReadSignal) {
+                bleReadSignal.notifyAll();
+            }
+        });
+        getLogger().info("BLE GATT initialized — subscribed to Meshtastic notifications");
     }
 
-
-    // PROCESSING THREAD
-    private void startProcessing() {
-        // CHECK TO SEE IF ALREADY PROCESSING
-        if (isProcessing.get()){
-            return;
+    /**
+     * Clean up BLE resources — unsubscribe notifications and stop reader thread.
+     */
+    private void cleanupBle() {
+        if (blePeripheral != null && bleSvcUuid != null && bleFromNumUuid != null) {
+            try {
+                blePeripheral.unsubscribe(bleSvcUuid, bleFromNumUuid);
+            } catch (Exception e) {
+                getLogger().debug("Error unsubscribing BLE notifications: {}", e.getMessage());
+            }
         }
 
+        synchronized (bleReadSignal) {
+            bleReadSignal.notifyAll();
+        }
+        if (bleReaderThread != null) {
+            bleReaderThread.interrupt();
+            try { bleReaderThread.join(2000); } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }
+
+        blePeripheral = null;
+        bleMessageQueue.clear();
+    }
+
+    // ========================= BLE READ/WRITE =========================
+
+    /**
+     * Polling reader loop for BLE — runs on dedicated thread.
+     * Reads fromRadio repeatedly, wakes on fromNum notifications.
+     */
+    private void bleReaderLoop() {
+        getLogger().debug("BLE reader thread started");
+        while (isProcessing.get() || !Thread.currentThread().isInterrupted()) {
+            try {
+                int count = drainFromRadio();
+                if (count == 0) {
+                    synchronized (bleReadSignal) {
+                        bleReadSignal.wait(200);
+                    }
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
+            } catch (Exception e) {
+                if (isProcessing.get()) {
+                    getLogger().warn("BLE reader error: {}", e.getMessage());
+                    try { Thread.sleep(500); } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        break;
+                    }
+                } else {
+                    break;
+                }
+            }
+        }
+        getLogger().debug("BLE reader thread stopped");
+    }
+
+    /**
+     * Read all available messages from the fromRadio characteristic.
+     * Each read returns one protobuf message or empty when drained.
+     *
+     * @return number of messages read
+     */
+    private int drainFromRadio() {
+        if (blePeripheral == null) return 0;
+        int count = 0;
+        try {
+            while (true) {
+                byte[] data = blePeripheral.read(bleSvcUuid, bleFromRadioUuid);
+                if (data == null || data.length == 0) break;
+                getLogger().debug("BLE read: {} bytes from fromRadio", data.length);
+                bleMessageQueue.offer(data);
+                count++;
+            }
+        } catch (Exception e) {
+            getLogger().debug("BLE drainFromRadio ended: {}", e.getMessage());
+        }
+        return count;
+    }
+
+    // ========================= PROCESSING =========================
+
+    private void startProcessing() {
+        if (isProcessing.get()) return;
+
         executor.execute(() -> {
-            try (InputStream in = commProvider.getInputStream()) {
-                isProcessing.set(true);
-                processInputStream(in);
-            } catch (IOException e) {
-                // This IOException is from getInputStream() or closing stream
-                getLogger().debug("Input stream failed or closed: {}", e.getMessage());
+            isProcessing.set(true);
+            try {
+                if (config.bleConnection) {
+                    processBleMessages();
+                } else {
+                    try (InputStream in = commProvider.getInputStream()) {
+                        processSerialStream(in);
+                    }
+                }
+            } catch (Exception e) {
+                getLogger().debug("Processing ended: {}", e.getMessage());
             } finally {
                 isProcessing.set(false);
             }
         });
     }
 
-    private void processInputStream(InputStream in) {
+    /**
+     * BLE processing loop — consumes raw protobuf payloads from the queue.
+     */
+    private void processBleMessages() {
         while (isProcessing.get()) {
             try {
-                processNextPacket(in);
+                byte[] payload = bleMessageQueue.poll(500, TimeUnit.MILLISECONDS);
+                if (payload == null) continue;
+                parseProtobuf(payload);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+        }
+    }
+
+    /**
+     * Serial processing loop — reads framed packets from the InputStream.
+     */
+    private void processSerialStream(InputStream in) {
+        while (isProcessing.get()) {
+            try {
+                processNextSerialPacket(in);
             } catch (Exception e) {
-                // Catch EBADF exception when comm provider is stopped and port is closed
                 if (!isProcessing.get() && e instanceof IllegalArgumentException && e.getMessage().contains("EBADF")) {
                     getLogger().debug("Serial port closed during shutdown (EBADF).");
                     break;
@@ -227,85 +372,70 @@ public class MeshtasticSensor extends AbstractSensorModule<Config> {
                 getLogger().error("Unexpected error in processing loop", e);
             }
         }
-
     }
 
+    private void processNextSerialPacket(InputStream in) throws IOException {
+        if (!findStartOfPacket(in)) return;
 
-    private void processNextPacket(InputStream in) throws IOException {
-        // Serial connections use 0x94/0xC3 frame headers; BLE uses length-prefixed messages only
-        if (!config.bleConnection) {
-            if (!findStartOfPacket(in)) {
-                return;
-            }
-        }
-
-        // GET LENGTH OF PACKET AND CHECK THAT IT MATCHES STYLE
         int length = readPacketLength(in);
         if (length <= 0 || length > 512) {
             getLogger().info("Invalid length, resyncing...");
             return;
         }
 
-        // READ PROTOBUF PAYLOAD DATA
         byte[] payload = readPayload(in, length);
-        if(payload.length == 0){
+        if (payload.length == 0) {
             getLogger().info("Truncated packet, resyncing...");
             return;
         }
 
-        // PARSE PROTOBUF PAYLOAD USING MESHTASTIC PROTOS
         parseProtobuf(payload);
     }
 
+    // ========================= SERIAL HELPERS =========================
+
     private boolean findStartOfPacket(InputStream in) throws IOException {
         int b;
-        // find START1 in Input Stream, indicating that a Protobuf messages is being sent
         do {
             b = in.read();
             if (b == -1) return false;
         } while (b != START1);
 
-        // If START1(0x94) is found, expect START2
         b = in.read();
-        // invalid header
         if (b != START2) {
             getLogger().warn("Invalid header");
             return false;
         }
-
         return true;
     }
 
-    // GET LENGTH OF PROTOBUF MESSAGE
     private int readPacketLength(InputStream in) throws IOException {
         int lenMSB = in.read();
         int lenLSB = in.read();
         if (lenMSB == -1 || lenLSB == -1) return -1;
-        return ((lenMSB & 0xFF) <<8 | (lenLSB & 0xFF));
+        return ((lenMSB & 0xFF) << 8 | (lenLSB & 0xFF));
     }
 
-    // READ A PAYLOAD FROM INPUT STREAM
     private byte[] readPayload(InputStream in, int length) throws IOException {
         byte[] payload = new byte[length];
         int read = 0;
-        while(read < length ){
-            int r = in.read(payload,read,length-read);
-            if (r == -1) {
-                return new byte[0];
-            }
+        while (read < length) {
+            int r = in.read(payload, read, length - read);
+            if (r == -1) return new byte[0];
             read += r;
         }
         return payload;
     }
 
-    // PARSE MESHTASTIC RADIO MESSAGE
-    private void parseProtobuf(byte[] payload){
+    // ========================= PROTOBUF PARSING (shared) =========================
+
+    private void parseProtobuf(byte[] payload) {
         try {
             MeshProtos.FromRadio msg = MeshProtos.FromRadio.parseFrom(payload);
-            if(msg.hasMyInfo()){
+            if (msg.hasMyInfo()) {
                 handleMyInfo(msg.getMyInfo());
             }
-            if(msg.hasPacket()){
+            if (msg.hasPacket()) {
                 MeshProtos.MeshPacket packet = msg.getPacket();
                 meshtasticHandler.handlePacket(packet);
             }
@@ -314,13 +444,94 @@ public class MeshtasticSensor extends AbstractSensorModule<Config> {
         }
     }
 
-    private void handleMyInfo(MeshProtos.MyNodeInfo myInfo){
+    private void handleMyInfo(MeshProtos.MyNodeInfo myInfo) {
         long nodeNum = Integer.toUnsignedLong(myInfo.getMyNodeNum());
         localMeshNodeId = String.format("!%08x", nodeNum);
         getLogger().info("Connected to Meshtastic radio: node ID = {}", localMeshNodeId);
     }
 
+    // ========================= SEND MESSAGE =========================
+
+    public boolean sendMessage(MeshProtos.ToRadio message) {
+        byte[] bytes = message.toByteArray();
+
+        try {
+            if (config.bleConnection) {
+                // BLE: write raw protobuf directly to toRadio characteristic
+                blePeripheral.writeRequest(bleSvcUuid, bleToRadioUuid, bytes);
+            } else {
+                // Serial: frame with 0x94/0xC3 header + 2-byte length
+                OutputStream os = commProvider.getOutputStream();
+                byte[] header = new byte[]{
+                        (byte) START1, (byte) START2,
+                        (byte) ((bytes.length >> 8) & 0xFF),
+                        (byte) (bytes.length & 0xFF)
+                };
+                os.write(header);
+                os.write(bytes);
+                os.flush();
+            }
+            return true;
+        } catch (Exception e) {
+            getLogger().error("Failed to send message", e);
+            return false;
+        }
+    }
+
+    // ========================= FETCH NODE ID =========================
+
     private String fetchLocalMeshNodeId() {
+        if (config.bleConnection) {
+            return fetchNodeIdBle();
+        } else {
+            return fetchNodeIdSerial();
+        }
+    }
+
+    private String fetchNodeIdBle() {
+        try {
+            commProvider.start();
+            Thread.sleep(100);
+
+            Peripheral p = ((BleCommProvider) commProvider).getPeripheral();
+            if (p == null) return null;
+
+            BluetoothUUID svc = new BluetoothUUID(MESH_SERVICE_UUID);
+            BluetoothUUID toRadio = new BluetoothUUID(MESH_TORADIO_UUID);
+            BluetoothUUID fromRadio = new BluetoothUUID(MESH_FROMRADIO_UUID);
+
+            // Send handshake
+            byte[] handshake = MeshProtos.ToRadio.newBuilder().setWantConfigId(0).build().toByteArray();
+            p.writeRequest(svc, toRadio, handshake);
+            getLogger().debug("BLE: sent handshake to toRadio");
+
+            // Poll fromRadio for MyNodeInfo
+            long deadline = System.currentTimeMillis() + 5000;
+            while (System.currentTimeMillis() < deadline) {
+                byte[] data = p.read(svc, fromRadio);
+                if (data == null || data.length == 0) {
+                    Thread.sleep(100);
+                    continue;
+                }
+                getLogger().debug("BLE fetchNodeId: read {} bytes", data.length);
+                MeshProtos.FromRadio msg = MeshProtos.FromRadio.parseFrom(data);
+                if (msg.hasMyInfo()) {
+                    long nodeNum = Integer.toUnsignedLong(msg.getMyInfo().getMyNodeNum());
+                    String nodeId = String.format("!%08x", nodeNum);
+                    getLogger().info("BLE: fetched node ID = {}", nodeId);
+                    return nodeId;
+                }
+            }
+            getLogger().warn("BLE: timed out waiting for radio node ID");
+        } catch (Exception e) {
+            getLogger().warn("BLE: could not fetch radio node ID: {}", e.getMessage());
+        } finally {
+            try { commProvider.stop(); } catch (Exception ignored) {}
+        }
+        return null;
+    }
+
+    private String fetchNodeIdSerial() {
         ExecutorService fetchExecutor = Executors.newSingleThreadExecutor();
         try {
             commProvider.start();
@@ -330,7 +541,7 @@ public class MeshtasticSensor extends AbstractSensorModule<Config> {
             Future<String> future = fetchExecutor.submit(() -> {
                 try (InputStream in = commProvider.getInputStream()) {
                     while (!Thread.currentThread().isInterrupted()) {
-                        if (!config.bleConnection && !findStartOfPacket(in)) continue;
+                        if (!findStartOfPacket(in)) continue;
                         int length = readPacketLength(in);
                         if (length <= 0 || length > 512) continue;
                         byte[] payload = readPayload(in, length);
@@ -355,35 +566,24 @@ public class MeshtasticSensor extends AbstractSensorModule<Config> {
             fetchExecutor.shutdownNow();
             try { commProvider.stop(); } catch (Exception ignored) {}
         }
-        
         return null;
     }
 
+    // ========================= FOI MANAGEMENT =========================
 
+    String addFoi(String meshNodeId) {
+        String foiUID = UID_PREFIX + ":foi:" + meshNodeId;
 
-    public boolean sendMessage(MeshProtos.ToRadio message) {
-        byte[] bytes = message.toByteArray();
-
-        try {
-            OutputStream os = commProvider.getOutputStream();
-            if (!config.bleConnection) {
-                // Serial framing: magic bytes + 2-byte length prefix
-                byte[] header = new byte[4];
-                header[0] = (byte) START1;
-                header[1] = (byte) START2;
-                header[2] = (byte) ((bytes.length >> 8) & 0xFF);
-                header[3] = (byte) (bytes.length & 0xFF);
-                os.write(header);
-            }
-            // BLE: raw protobuf only — the comm provider handles GATT framing
-            os.write(bytes);
-            os.flush();
-            return true;
-        } catch (IOException e) {
-            getLogger().error("Failed to send message", e);
-            return false;
+        if (!foiMap.containsKey(foiUID)) {
+            MovingFeature foi = new MovingFeature();
+            foi.setId(meshNodeId);
+            foi.setUniqueIdentifier(foiUID);
+            foi.setName(meshNodeId);
+            foi.setDescription("meshtastic Node " + meshNodeId);
+            addFoi(foi);
+            getLogger().debug("New meshtastic Node added as FOI: {}", foiUID);
         }
 
+        return foiUID;
     }
-
 }

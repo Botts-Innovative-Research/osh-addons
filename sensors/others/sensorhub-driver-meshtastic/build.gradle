@@ -10,6 +10,8 @@ version = '1.0.2'
 
 dependencies {
     implementation 'org.sensorhub:sensorhub-core:' + oshCoreVersion
+    implementation project(':sensorhub-comm-bluetooth')
+    implementation 'org.simpleble:simplejavable:1.1.0'
     embeddedImpl "com.google.protobuf:protobuf-java:4.28.2"
     testImplementation "junit:junit:4.13.1"
     testImplementation project(':sensorhub-comm-jssc')

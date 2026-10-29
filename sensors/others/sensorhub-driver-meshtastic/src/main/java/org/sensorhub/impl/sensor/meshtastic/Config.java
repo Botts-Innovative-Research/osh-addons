@@ -36,8 +36,8 @@ public class Config extends SensorConfig {
     public CommProviderConfig<?> commSettings;
 
     @DisplayInfo(label = "BLE Connection",
-            desc = "Enable when using a BLE comm provider. Disables serial framing (0x94/0xC3 headers) " +
-                    "and uses length-prefixed messages instead.")
+            desc = "Enable when using a BLE comm provider. The driver will perform Meshtastic " +
+                    "GATT operations directly on the radio's BLE service.")
     public boolean bleConnection = false;
 
 }
