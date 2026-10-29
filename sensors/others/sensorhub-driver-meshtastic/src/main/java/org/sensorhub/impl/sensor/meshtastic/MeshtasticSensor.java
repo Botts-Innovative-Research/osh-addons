@@ -44,6 +44,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class MeshtasticSensor extends AbstractSensorModule<Config> {
     static final String UID_PREFIX = "urn:osh:sensor:georobotix:meshtastic:";
     static final String XML_PREFIX = "meshtastic";
+    private static final String NODE_ID_FORMAT = "!%08x";
 
     String localMeshNodeId = null;
 
@@ -71,16 +72,13 @@ public class MeshtasticSensor extends AbstractSensorModule<Config> {
     private Thread bleReaderThread;
     private final Object bleReadSignal = new Object();
 
-    // DEFINE meshtastic protobuf handler
     MeshtasticHandler meshtasticHandler;
 
-    // DEFINE OUTPUTS
     MeshtasticOutputTextMessage textOutput;
     MeshtasticOutputPosition posOutput;
     MeshtasticOutputNodeInfo nodeInfoOutput;
     MeshtasticOutputGeneric genericOutput;
 
-    // DEFINE CONTROL
     MeshtasticControlTextMessage meshtasticControlTextMessage;
 
 
@@ -88,13 +86,11 @@ public class MeshtasticSensor extends AbstractSensorModule<Config> {
     public void doInit() throws SensorHubException {
         super.doInit();
 
-        // Load comm provider and fetch the radio's node ID before generating UIDs
         if (config.commSettings != null) {
             commProvider = (ICommProvider<?>) getParentHub().getModuleRegistry().loadSubModule(config.commSettings, true);
             localMeshNodeId = fetchLocalMeshNodeId();
         }
 
-        // Use manual serial number if provided, otherwise use the discovered radio node ID
         String id;
         if (config.serialNumber != null && !config.serialNumber.isBlank()) {
             id = config.serialNumber;
@@ -106,7 +102,6 @@ public class MeshtasticSensor extends AbstractSensorModule<Config> {
         generateUniqueID(UID_PREFIX, id);
         generateXmlID(XML_PREFIX, id);
 
-        // CREATE AND INITIALIZE OUTPUTS
         textOutput = new MeshtasticOutputTextMessage(this);
         addOutput(textOutput, false);
         textOutput.doInit();
@@ -123,10 +118,8 @@ public class MeshtasticSensor extends AbstractSensorModule<Config> {
         addOutput(genericOutput, false);
         genericOutput.doInit();
 
-        // INITIALIZE HANDLER
         meshtasticHandler = new MeshtasticHandler(this);
 
-        // INITIALIZE CONTROL
         meshtasticControlTextMessage = new MeshtasticControlTextMessage(this);
         addControlInput(meshtasticControlTextMessage);
     }
@@ -139,21 +132,32 @@ public class MeshtasticSensor extends AbstractSensorModule<Config> {
             throw new SensorHubException("No communication provider configured");
         }
 
-        commProvider.start();
-        try { Thread.sleep(100); } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new SensorHubException("Thread interrupted while starting comm provider", e);
-        }
-
-        // BLE: get the peripheral and set up GATT
         if (config.bleConnection) {
+            // BLE: reuse connection from fetchNodeIdBle() if still active
+            Peripheral existing = (commProvider instanceof BleCommProvider)
+                    ? ((BleCommProvider) commProvider).getPeripheral() : null;
+            if (existing == null) {
+                commProvider.start();
+                try { Thread.sleep(100); } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    throw new SensorHubException("Thread interrupted while starting comm provider", e);
+                }
+            } else {
+                getLogger().info("Reusing existing BLE connection");
+            }
             initBle();
+        } else {
+            commProvider.start();
+            try { Thread.sleep(100); } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new SensorHubException("Thread interrupted while starting comm provider", e);
+            }
         }
 
-        // Send handshake to start receiving protobufs
-        sendMessage(MeshProtos.ToRadio.newBuilder().setWantConfigId(0).build());
+        // Send startConfig handshake with random non-zero config ID
+        int configId = newConfigId();
+        sendMessage(MeshProtos.ToRadio.newBuilder().setWantConfigId(configId).build());
 
-        // BEGIN PROCESSING DATA
         if (executor == null || executor.isShutdown() || executor.isTerminated()) {
             executor = Executors.newSingleThreadExecutor();
         }
@@ -166,17 +170,14 @@ public class MeshtasticSensor extends AbstractSensorModule<Config> {
 
         isProcessing.set(false);
 
-        // BLE: clean up notifications and reader thread
         if (config.bleConnection) {
             cleanupBle();
         }
 
-        // Close comm provider — this also unblocks serial read()
         if (commProvider != null) {
             commProvider.stop();
         }
 
-        // Shutdown processing executor
         if (executor != null) {
             executor.shutdownNow();
             try {
@@ -194,13 +195,12 @@ public class MeshtasticSensor extends AbstractSensorModule<Config> {
         return commProvider != null && commProvider.isInitialized();
     }
 
+    private static int newConfigId() {
+        return (int) (Math.random() * Integer.MAX_VALUE) + 1;
+    }
+
     // ========================= BLE SETUP/TEARDOWN =========================
 
-    /**
-     * Initialize BLE GATT — get the peripheral from the comm provider,
-     * cache UUID objects, subscribe to fromNum notifications, and start
-     * the reader thread.
-     */
     private void initBle() throws SensorHubException {
         if (!(commProvider instanceof BleCommProvider)) {
             throw new SensorHubException("BLE connection is enabled but the comm provider is not a BLE provider");
@@ -211,19 +211,17 @@ public class MeshtasticSensor extends AbstractSensorModule<Config> {
             throw new SensorHubException("BLE peripheral is not connected");
         }
 
-        // Cache UUID objects to avoid allocation in hot paths
         bleSvcUuid = new BluetoothUUID(MESH_SERVICE_UUID);
         bleToRadioUuid = new BluetoothUUID(MESH_TORADIO_UUID);
         bleFromRadioUuid = new BluetoothUUID(MESH_FROMRADIO_UUID);
         bleFromNumUuid = new BluetoothUUID(MESH_FROMNUM_UUID);
 
-        // Start the reader thread BEFORE subscribing to notifications
         bleMessageQueue.clear();
         bleReaderThread = new Thread(this::bleReaderLoop, "Mesh-BLE-reader");
         bleReaderThread.setDaemon(true);
         bleReaderThread.start();
 
-        // Subscribe to fromNum notifications — signals that new data is available
+        // Subscribe to fromNum notifications — signals new data is available.
         // The callback runs on SimpleBLE's native thread, so it must NOT call
         // peripheral.read() — it just signals the reader thread.
         blePeripheral.notify(bleSvcUuid, bleFromNumUuid, data -> {
@@ -235,9 +233,6 @@ public class MeshtasticSensor extends AbstractSensorModule<Config> {
         getLogger().info("BLE GATT initialized — subscribed to Meshtastic notifications");
     }
 
-    /**
-     * Clean up BLE resources — unsubscribe notifications and stop reader thread.
-     */
     private void cleanupBle() {
         if (blePeripheral != null && bleSvcUuid != null && bleFromNumUuid != null) {
             try {
@@ -263,10 +258,6 @@ public class MeshtasticSensor extends AbstractSensorModule<Config> {
 
     // ========================= BLE READ/WRITE =========================
 
-    /**
-     * Polling reader loop for BLE — runs on dedicated thread.
-     * Reads fromRadio repeatedly, wakes on fromNum notifications.
-     */
     private void bleReaderLoop() {
         getLogger().debug("BLE reader thread started");
         while (isProcessing.get() || !Thread.currentThread().isInterrupted()) {
@@ -295,12 +286,6 @@ public class MeshtasticSensor extends AbstractSensorModule<Config> {
         getLogger().debug("BLE reader thread stopped");
     }
 
-    /**
-     * Read all available messages from the fromRadio characteristic.
-     * Each read returns one protobuf message or empty when drained.
-     *
-     * @return number of messages read
-     */
     private int drainFromRadio() {
         if (blePeripheral == null) return 0;
         int count = 0;
@@ -341,9 +326,6 @@ public class MeshtasticSensor extends AbstractSensorModule<Config> {
         });
     }
 
-    /**
-     * BLE processing loop — consumes raw protobuf payloads from the queue.
-     */
     private void processBleMessages() {
         while (isProcessing.get()) {
             try {
@@ -357,9 +339,6 @@ public class MeshtasticSensor extends AbstractSensorModule<Config> {
         }
     }
 
-    /**
-     * Serial processing loop — reads framed packets from the InputStream.
-     */
     private void processSerialStream(InputStream in) {
         while (isProcessing.get()) {
             try {
@@ -436,8 +415,7 @@ public class MeshtasticSensor extends AbstractSensorModule<Config> {
                 handleMyInfo(msg.getMyInfo());
             }
             if (msg.hasPacket()) {
-                MeshProtos.MeshPacket packet = msg.getPacket();
-                meshtasticHandler.handlePacket(packet);
+                meshtasticHandler.handlePacket(msg.getPacket());
             }
         } catch (Exception e) {
             getLogger().error("Invalid protobuf: {} ", e.getMessage());
@@ -446,7 +424,7 @@ public class MeshtasticSensor extends AbstractSensorModule<Config> {
 
     private void handleMyInfo(MeshProtos.MyNodeInfo myInfo) {
         long nodeNum = Integer.toUnsignedLong(myInfo.getMyNodeNum());
-        localMeshNodeId = String.format("!%08x", nodeNum);
+        localMeshNodeId = String.format(NODE_ID_FORMAT, nodeNum);
         getLogger().info("Connected to Meshtastic radio: node ID = {}", localMeshNodeId);
     }
 
@@ -457,10 +435,8 @@ public class MeshtasticSensor extends AbstractSensorModule<Config> {
 
         try {
             if (config.bleConnection) {
-                // BLE: write raw protobuf directly to toRadio characteristic
                 blePeripheral.writeRequest(bleSvcUuid, bleToRadioUuid, bytes);
             } else {
-                // Serial: frame with 0x94/0xC3 header + 2-byte length
                 OutputStream os = commProvider.getOutputStream();
                 byte[] header = new byte[]{
                         (byte) START1, (byte) START2,
@@ -489,9 +465,23 @@ public class MeshtasticSensor extends AbstractSensorModule<Config> {
     }
 
     private String fetchNodeIdBle() {
+        for (int attempt = 1; attempt <= 3; attempt++) {
+            String result = attemptFetchNodeIdBle(attempt);
+            if (result != null) return result;
+
+            try { commProvider.stop(); } catch (Exception ignored) {}
+            try { Thread.sleep(1000); } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+        }
+        return null;
+    }
+
+    private String attemptFetchNodeIdBle(int attempt) {
         try {
             commProvider.start();
-            Thread.sleep(100);
+            Thread.sleep(500);
 
             Peripheral p = ((BleCommProvider) commProvider).getPeripheral();
             if (p == null) return null;
@@ -499,13 +489,21 @@ public class MeshtasticSensor extends AbstractSensorModule<Config> {
             BluetoothUUID svc = new BluetoothUUID(MESH_SERVICE_UUID);
             BluetoothUUID toRadio = new BluetoothUUID(MESH_TORADIO_UUID);
             BluetoothUUID fromRadio = new BluetoothUUID(MESH_FROMRADIO_UUID);
+            BluetoothUUID fromNum = new BluetoothUUID(MESH_FROMNUM_UUID);
 
-            // Send handshake
-            byte[] handshake = MeshProtos.ToRadio.newBuilder().setWantConfigId(0).build().toByteArray();
+            // Subscribe to fromNum before sending handshake — the radio needs
+            // to see an active subscription before it queues responses
+            p.notify(svc, fromNum, data -> {});
+            getLogger().debug("BLE fetchNodeId (attempt {}): subscribed to fromNum", attempt);
+            Thread.sleep(200);
+
+            int configId = newConfigId();
+            byte[] handshake = MeshProtos.ToRadio.newBuilder()
+                    .setWantConfigId(configId)
+                    .build().toByteArray();
             p.writeRequest(svc, toRadio, handshake);
-            getLogger().debug("BLE: sent handshake to toRadio");
+            getLogger().debug("BLE fetchNodeId (attempt {}): sent startConfig (configId={})", attempt, configId);
 
-            // Poll fromRadio for MyNodeInfo
             long deadline = System.currentTimeMillis() + 5000;
             while (System.currentTimeMillis() < deadline) {
                 byte[] data = p.read(svc, fromRadio);
@@ -517,16 +515,23 @@ public class MeshtasticSensor extends AbstractSensorModule<Config> {
                 MeshProtos.FromRadio msg = MeshProtos.FromRadio.parseFrom(data);
                 if (msg.hasMyInfo()) {
                     long nodeNum = Integer.toUnsignedLong(msg.getMyInfo().getMyNodeNum());
-                    String nodeId = String.format("!%08x", nodeNum);
+                    String nodeId = String.format(NODE_ID_FORMAT, nodeNum);
                     getLogger().info("BLE: fetched node ID = {}", nodeId);
+                    // Drain remaining config messages so the queue is clean for doStart()
+                    int drained = 0;
+                    while (true) {
+                        byte[] extra = p.read(svc, fromRadio);
+                        if (extra == null || extra.length == 0) break;
+                        drained++;
+                    }
+                    getLogger().debug("BLE fetchNodeId: drained {} additional config messages", drained);
+                    try { p.unsubscribe(svc, fromNum); } catch (Exception ignored) {}
                     return nodeId;
                 }
             }
-            getLogger().warn("BLE: timed out waiting for radio node ID");
+            getLogger().warn("BLE fetchNodeId (attempt {}): timed out", attempt);
         } catch (Exception e) {
-            getLogger().warn("BLE: could not fetch radio node ID: {}", e.getMessage());
-        } finally {
-            try { commProvider.stop(); } catch (Exception ignored) {}
+            getLogger().warn("BLE fetchNodeId (attempt {}): {}", attempt, e.getMessage());
         }
         return null;
     }
@@ -536,7 +541,7 @@ public class MeshtasticSensor extends AbstractSensorModule<Config> {
         try {
             commProvider.start();
             Thread.sleep(100);
-            sendMessage(MeshProtos.ToRadio.newBuilder().setWantConfigId(0).build());
+            sendMessage(MeshProtos.ToRadio.newBuilder().setWantConfigId(newConfigId()).build());
 
             Future<String> future = fetchExecutor.submit(() -> {
                 try (InputStream in = commProvider.getInputStream()) {
@@ -549,7 +554,7 @@ public class MeshtasticSensor extends AbstractSensorModule<Config> {
                         MeshProtos.FromRadio msg = MeshProtos.FromRadio.parseFrom(payload);
                         if (msg.hasMyInfo()) {
                             long nodeNum = Integer.toUnsignedLong(msg.getMyInfo().getMyNodeNum());
-                            return String.format("!%08x", nodeNum);
+                            return String.format(NODE_ID_FORMAT, nodeNum);
                         }
                     }
                 }
