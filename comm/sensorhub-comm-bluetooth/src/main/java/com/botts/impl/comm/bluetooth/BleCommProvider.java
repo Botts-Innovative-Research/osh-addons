@@ -16,7 +16,6 @@
 package com.botts.impl.comm.bluetooth;
 
 import org.simplejavable.Adapter;
-import org.simplejavable.BluetoothUUID;
 import org.simplejavable.Peripheral;
 import org.sensorhub.api.comm.ICommProvider;
 import org.sensorhub.api.common.SensorHubException;
@@ -28,48 +27,32 @@ import java.util.List;
 
 
 /**
- * Generic BLE GATT communication provider using SimpleBLE.
+ * Generic BLE connection manager using SimpleBLE.
  * <p>
- * Connects to a BLE peripheral, discovers the configured GATT service, and bridges
- * characteristic read/write/notify operations into standard Java InputStream/OutputStream.
+ * Scans for and connects to a BLE peripheral based on device address or name filter.
+ * Exposes the connected {@link Peripheral} via {@link #getPeripheral()} so that
+ * drivers can perform their own GATT service/characteristic operations directly.
  * <p>
- * The InputStream prepends a 2-byte big-endian length prefix to each GATT message so that
- * consumers can detect message boundaries in the byte stream. The OutputStream buffers
- * bytes until flush() and sends the complete buffer as a single GATT write.
+ * This module is device-agnostic — it only manages the BLE connection lifecycle.
+ * All protocol-specific GATT logic belongs in the driver.
  * <p>
- * This module is device-agnostic — configure the service and characteristic UUIDs
- * for any BLE peripheral.
+ * Note: {@link #getInputStream()} and {@link #getOutputStream()} return {@code null}
+ * because BLE is message-oriented. Drivers should use {@link #getPeripheral()} instead.
  */
 public class BleCommProvider extends AbstractModule<BleCommProviderConfig> implements ICommProvider<BleCommProviderConfig> {
 
     private Peripheral peripheral;
-    private BleInputStream bleInputStream;
-    private BleOutputStream bleOutputStream;
 
-    private BluetoothUUID serviceUuid;
-    private BluetoothUUID readCharUuid;
-    private BluetoothUUID writeCharUuid;
-    private BluetoothUUID notifyCharUuid;
 
+    private static boolean isBlank(String s) {
+        return s == null || s.isBlank();
+    }
 
     @Override
     protected void doStart() throws SensorHubException {
         BleProtocolConfig proto = config.protocol;
 
-        if (proto.serviceUUID.isBlank())
-            throw new SensorHubException("Service UUID must be configured");
-        if (proto.readCharUUID.isBlank())
-            throw new SensorHubException("Read Characteristic UUID must be configured");
-        if (proto.writeCharUUID.isBlank())
-            throw new SensorHubException("Write Characteristic UUID must be configured");
-
-        serviceUuid = new BluetoothUUID(proto.serviceUUID);
-        readCharUuid = new BluetoothUUID(proto.readCharUUID);
-        writeCharUuid = new BluetoothUUID(proto.writeCharUUID);
-        notifyCharUuid = proto.notifyCharUUID.isBlank() ? null : new BluetoothUUID(proto.notifyCharUUID);
-
         try {
-            // Get the first available BLE adapter
             List<Adapter> adapters = Adapter.getAdapters();
             if (adapters.isEmpty()) {
                 throw new SensorHubException("No Bluetooth adapters found on this system");
@@ -77,7 +60,6 @@ public class BleCommProvider extends AbstractModule<BleCommProviderConfig> imple
             Adapter adapter = adapters.get(0);
             getLogger().info("Using BLE adapter: {} [{}]", adapter.getIdentifier(), adapter.getAddress());
 
-            // Scan for the target device
             peripheral = findDevice(adapter, proto);
             if (peripheral == null) {
                 throw new SensorHubException(
@@ -85,41 +67,33 @@ public class BleCommProvider extends AbstractModule<BleCommProviderConfig> imple
                         "address='" + proto.deviceAddress + "', nameFilter='" + proto.deviceNameFilter + "')");
             }
 
-            // Connect
             getLogger().info("Connecting to BLE device: {} [{}]",
                     peripheral.getIdentifier(), peripheral.getAddress());
             peripheral.connect();
-            getLogger().info("Connected to BLE device, MTU: {}", peripheral.getMtu());
-
-            // Create the bridged streams
-            bleInputStream = new BleInputStream();
-            bleOutputStream = new BleOutputStream(peripheral, serviceUuid, writeCharUuid);
-
-            // Subscribe to notifications if a notify characteristic is configured
-            if (notifyCharUuid != null) {
-                peripheral.notify(serviceUuid, notifyCharUuid, data -> {
-                    // Notification received — read all available messages from the read characteristic
-                    readAllAvailable();
-                });
-                getLogger().debug("Subscribed to notifications on {}", proto.notifyCharUUID);
-            }
-
-            // Initial read sweep — pick up any data already queued on the device
-            readAllAvailable();
+            getLogger().info("Connected to BLE device: {} [{}], MTU: {}",
+                    peripheral.getIdentifier(), peripheral.getAddress(), peripheral.getMtu());
 
         } catch (SensorHubException e) {
             throw e;
         } catch (Exception e) {
             throw new SensorHubException("Failed to start BLE connection", e);
         }
-
-        getLogger().info("BLE communication provider started");
     }
 
     /**
-     * Scan for a BLE device matching the configured address, name filter, or any connectable device.
+     * Returns the connected BLE peripheral for direct GATT operations.
+     *
+     * @return the connected Peripheral, or null if not connected
      */
-    private Peripheral findDevice(Adapter adapter, BleProtocolConfig proto) {
+    public Peripheral getPeripheral() {
+        return peripheral;
+    }
+
+    /**
+     * Scan for a BLE device matching the configured address, name filter,
+     * or any connectable device.
+     */
+    private Peripheral findDevice(Adapter adapter, BleProtocolConfig proto) throws Exception {
         getLogger().info("Scanning for BLE devices (timeout={}ms)...", proto.scanTimeoutMs);
 
         adapter.scanFor(proto.scanTimeoutMs);
@@ -131,8 +105,8 @@ public class BleCommProvider extends AbstractModule<BleCommProviderConfig> imple
             if (!p.isConnectable()) continue;
 
             // Match by specific device address
-            if (!proto.deviceAddress.isBlank()) {
-                if (p.getAddress().equalsIgnoreCase(proto.deviceAddress)) {
+            if (!isBlank(proto.deviceAddress)) {
+                if (p.getAddress().toString().equalsIgnoreCase(proto.deviceAddress)) {
                     getLogger().debug("Matched by address: {} [{}]", p.getIdentifier(), p.getAddress());
                     return p;
                 }
@@ -140,7 +114,7 @@ public class BleCommProvider extends AbstractModule<BleCommProviderConfig> imple
             }
 
             // Match by name substring
-            if (!proto.deviceNameFilter.isBlank()) {
+            if (!isBlank(proto.deviceNameFilter)) {
                 String name = p.getIdentifier();
                 if (name != null && name.toLowerCase().contains(proto.deviceNameFilter.toLowerCase())) {
                     getLogger().debug("Matched by name: {} [{}]", p.getIdentifier(), p.getAddress());
@@ -158,57 +132,33 @@ public class BleCommProvider extends AbstractModule<BleCommProviderConfig> imple
     }
 
     /**
-     * Read all available messages from the read characteristic and enqueue them
-     * into the input stream. Stops when a read returns empty data.
+     * Not supported for BLE — drivers should use {@link #getPeripheral()} instead.
+     * @return null
      */
-    private void readAllAvailable() {
-        try {
-            while (true) {
-                byte[] data = peripheral.read(serviceUuid, readCharUuid);
-                if (data == null || data.length == 0) break;
-                bleInputStream.enqueueMessage(data);
-            }
-        } catch (Exception e) {
-            getLogger().debug("BLE read sweep ended: {}", e.getMessage());
-        }
-    }
-
-
     @Override
     public InputStream getInputStream() {
-        return bleInputStream;
+        return null;
     }
 
+    /**
+     * Not supported for BLE — drivers should use {@link #getPeripheral()} instead.
+     * @return null
+     */
     @Override
     public OutputStream getOutputStream() {
-        return bleOutputStream;
+        return null;
     }
-
 
     @Override
     protected void doStop() throws SensorHubException {
-        if (bleInputStream != null) {
-            bleInputStream.closeStream();
-        }
-        if (bleOutputStream != null) {
-            bleOutputStream.closeStream();
-        }
-
         if (peripheral != null) {
             try {
-                if (notifyCharUuid != null) {
-                    peripheral.unsubscribe(serviceUuid, notifyCharUuid);
-                }
                 peripheral.disconnect();
+                getLogger().info("BLE device disconnected");
             } catch (Exception e) {
                 getLogger().debug("Error disconnecting BLE: {}", e.getMessage());
             }
         }
-
         peripheral = null;
-        bleInputStream = null;
-        bleOutputStream = null;
-
-        getLogger().info("BLE communication provider stopped");
     }
 }
