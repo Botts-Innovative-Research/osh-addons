@@ -20,34 +20,20 @@ import org.sensorhub.api.config.DisplayInfo;
 
 
 /**
- * Protocol configuration for a BLE GATT connection.
- * All fields are generic — no device-specific logic belongs here.
+ * Configuration for a BLE connection.
+ * Only handles device discovery and connection — no GATT service/characteristic
+ * details. Drivers that use this comm provider are responsible for their own
+ * GATT operations via {@link BleCommProvider#getPeripheral()}.
  */
 public class BleProtocolConfig implements ICommConfig {
 
     @DisplayInfo(label = "Device Address",
-            desc = "BLE device address (MAC on Linux/Windows, UUID on macOS). Leave empty to auto-discover.")
+            desc = "BLE device address (MAC on Linux/Windows, UUID on macOS). Leave empty to use name filter.")
     public String deviceAddress = "";
 
     @DisplayInfo(label = "Device Name Filter",
             desc = "Filter discovered devices by name (substring match). Used when Device Address is empty.")
     public String deviceNameFilter = "";
-
-    @DisplayInfo(label = "Service UUID",
-            desc = "GATT service UUID to connect to")
-    public String serviceUUID = "";
-
-    @DisplayInfo(label = "Read Characteristic UUID",
-            desc = "GATT characteristic UUID for reading data from the device")
-    public String readCharUUID = "";
-
-    @DisplayInfo(label = "Write Characteristic UUID",
-            desc = "GATT characteristic UUID for writing data to the device")
-    public String writeCharUUID = "";
-
-    @DisplayInfo(label = "Notify Characteristic UUID",
-            desc = "GATT characteristic UUID for notifications (signals new data is available to read). Leave empty if not used.")
-    public String notifyCharUUID = "";
 
     @DisplayInfo(label = "Requested MTU",
             desc = "Requested BLE Maximum Transmission Unit size in bytes")
