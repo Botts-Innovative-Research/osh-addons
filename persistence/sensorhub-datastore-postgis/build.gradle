@@ -1,7 +1,7 @@
 description = 'OSH Datastore (PostGis)'
 ext.details = 'Storage module backed by a PostGis database'
 
-version = '1.0.0'
+version = '1.0.1'
 
 dependencies {
   implementation 'org.sensorhub:sensorhub-core:' + oshCoreVersion
