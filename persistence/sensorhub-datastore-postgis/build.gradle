@@ -6,7 +6,8 @@ version = '1.0.0'
 dependencies {
   implementation 'org.sensorhub:sensorhub-core:' + oshCoreVersion
   implementation 'org.sensorhub:sensorhub-service-consys:'+ oshCoreVersion
-  embeddedImpl('org.postgresql:postgresql:42.7.7') {
+  // 42.7.12 fixes CVE-2026-54291 and CVE-2026-42198
+  embeddedImpl('org.postgresql:postgresql:42.7.12') {
     exclude group: "org.slf4j", module: "slf4j-api"
   }
   embeddedImpl('net.postgis:postgis-jdbc:2021.1.0'){

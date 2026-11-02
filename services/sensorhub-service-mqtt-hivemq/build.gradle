@@ -11,6 +11,17 @@ dependencies {
     exclude group: 'ch.qos.logback', module: 'logback-classic'
     exclude group: 'org.slf4j', module: 'slf4j-api'
   }
+  
+  // override vulnerable libraries bundled with HiveMQ CE 2023.8
+  embeddedImpl platform('com.fasterxml.jackson:jackson-bom:2.18.11') // was 2.15.2
+  embeddedImpl platform('io.netty:netty-bom:4.1.139.Final')          // was 4.1.94.Final
+  constraints {
+    embeddedImpl('org.bouncycastle:bcprov-jdk18on:1.86')             // was 1.75
+    embeddedImpl('org.bouncycastle:bcpkix-jdk18on:1.86')
+    embeddedImpl('org.bouncycastle:bcutil-jdk18on:1.86')
+    embeddedImpl('org.apache.commons:commons-compress:1.28.0')       // was 1.23.0
+    embeddedImpl('commons-io:commons-io:2.22.0')                     // was 2.13.0
+  }
 }
 
 // add info to OSGi manifest

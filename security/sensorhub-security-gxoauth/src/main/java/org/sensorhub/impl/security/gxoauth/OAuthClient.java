@@ -16,10 +16,10 @@ package org.sensorhub.impl.security.gxoauth;
 
 import javax.servlet.ServletRequest;
 import javax.servlet.ServletResponse;
-import org.eclipse.jetty.security.Authenticator;
-import org.eclipse.jetty.security.ServerAuthException;
-import org.eclipse.jetty.server.Authentication;
-import org.eclipse.jetty.server.Authentication.User;
+import org.eclipse.jetty.ee8.security.Authenticator;
+import org.eclipse.jetty.ee8.security.ServerAuthException;
+import org.eclipse.jetty.ee8.nested.Authentication;
+import org.eclipse.jetty.ee8.nested.Authentication.User;
 import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.impl.module.AbstractModule;
 

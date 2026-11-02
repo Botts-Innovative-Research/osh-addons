@@ -21,9 +21,9 @@ import java.nio.ByteBuffer;
 import java.nio.channels.AsynchronousCloseException;
 import java.nio.channels.AsynchronousSocketChannel;
 import java.nio.channels.CompletionHandler;
-import org.eclipse.jetty.websocket.api.Session;
-import org.eclipse.jetty.websocket.api.StatusCode;
-import org.eclipse.jetty.websocket.api.WebSocketListener;
+import org.eclipse.jetty.ee8.websocket.api.Session;
+import org.eclipse.jetty.ee8.websocket.api.StatusCode;
+import org.eclipse.jetty.ee8.websocket.api.WebSocketListener;
 import org.sensorhub.impl.service.WebSocketUtils;
 import org.slf4j.Logger;
 

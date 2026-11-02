@@ -14,7 +14,7 @@ Copyright (C) 2012-2016 Sensia Software LLC. All Rights Reserved.
 
 package org.sensorhub.impl.security.oauth;
 
-import org.eclipse.jetty.security.Authenticator;
+import org.eclipse.jetty.ee8.security.Authenticator;
 import org.sensorhub.api.common.SensorHubException;
 import org.sensorhub.api.service.IHttpServer;
 import org.sensorhub.impl.module.AbstractModule;

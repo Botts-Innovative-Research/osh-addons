@@ -15,19 +15,27 @@
 
 package com.botts.impl.service.fileserver;
 
-import org.eclipse.jetty.server.Request;
-import org.eclipse.jetty.server.handler.ResourceHandler;
 import org.sensorhub.api.security.ISecurityManager;
 import org.slf4j.Logger;
 
+import javax.servlet.Filter;
+import javax.servlet.FilterChain;
+import javax.servlet.FilterConfig;
 import javax.servlet.ServletException;
+import javax.servlet.ServletRequest;
+import javax.servlet.ServletResponse;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
 
 import static javax.servlet.http.HttpServletResponse.SC_FORBIDDEN;
 
-public class FileHandler extends ResourceHandler {
+/**
+ * Servlet filter applying OSH permissions to file server requests.<br/>
+ * (was a Jetty ResourceHandler subclass before Jetty 12; files are now served
+ * by Jetty's DefaultServlet, see {@link FileServer})
+ */
+public class FileHandler implements Filter {
 
     static final String LOG_REQUEST_MSG = "{} {}{} (from ip={}, user={})";
     static final String INTERNAL_ERROR_MSG = "Internal server error";
@@ -43,9 +51,17 @@ public class FileHandler extends ResourceHandler {
     }
 
     @Override
-    public void handle(String target, Request baseRequest,
-                       HttpServletRequest request,
-                       HttpServletResponse response) throws ServletException, IOException {
+    public void init(FilterConfig filterConfig) {
+    }
+
+    @Override
+    public void destroy() {
+    }
+
+    @Override
+    public void doFilter(ServletRequest req, ServletResponse resp, FilterChain chain) throws IOException, ServletException {
+        HttpServletRequest request = (HttpServletRequest) req;
+        HttpServletResponse response = (HttpServletResponse) resp;
         try {
             // Set current user
             setCurrentUser(request);
@@ -53,13 +69,10 @@ public class FileHandler extends ResourceHandler {
             // Check if current user has permissions
             if (!security.hasPermission(security.get)) {
                 response.sendError(HttpServletResponse.SC_FORBIDDEN, "You do not have access to this resource");
-                baseRequest.setHandled(true);
                 return;
             }
 
-            baseRequest.setHandled(false);
-
-            FileHandler.super.handle(target, baseRequest, request, response);
+            chain.doFilter(request, response);
         } catch (IOException | ServletException e) {
             logError(request, e);
         } finally {

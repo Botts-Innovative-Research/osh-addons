@@ -29,7 +29,7 @@ import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Objects;
-import org.eclipse.jetty.util.TypeUtil;
+import java.util.HexFormat;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.vast.swe.Base64Encoder;
@@ -272,7 +272,7 @@ public class RTSPClient
             byte[] ha2 = md.digest();
 
             // calc response
-            md.update(TypeUtil.toString(ha1, 16).getBytes(StandardCharsets.ISO_8859_1));
+            md.update(HexFormat.of().formatHex(ha1).getBytes(StandardCharsets.ISO_8859_1));
             md.update((byte) ':');
             md.update(digestNonce.getBytes(StandardCharsets.ISO_8859_1));
             md.update((byte) ':');                
@@ -283,8 +283,8 @@ public class RTSPClient
             //md.update((byte) ':');
             //md.update(qop.getBytes(StandardCharsets.ISO_8859_1));
             //md.update((byte) ':');                
-            md.update(TypeUtil.toString(ha2, 16).getBytes(StandardCharsets.ISO_8859_1));
-            String response = TypeUtil.toString(md.digest(), 16);
+            md.update(HexFormat.of().formatHex(ha2).getBytes(StandardCharsets.ISO_8859_1));
+            String response = HexFormat.of().formatHex(md.digest());
             
             log.trace("username=\"{}\", realm=\"{}\", nonce=\"{}\", uri=\"{}\", response=\"{}\"",
                       userName, digestRealm, digestNonce, digestUri, response);

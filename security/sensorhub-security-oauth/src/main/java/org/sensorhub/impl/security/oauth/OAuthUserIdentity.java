@@ -16,7 +16,7 @@ package org.sensorhub.impl.security.oauth;
 
 import java.security.Principal;
 import javax.security.auth.Subject;
-import org.eclipse.jetty.server.UserIdentity;
+import org.eclipse.jetty.security.UserIdentity;
 
 
 public class OAuthUserIdentity implements UserIdentity
@@ -63,7 +63,7 @@ public class OAuthUserIdentity implements UserIdentity
 
 
     @Override
-    public boolean isUserInRole(String arg0, Scope arg1)
+    public boolean isUserInRole(String arg0)
     {
         return false;
     }
