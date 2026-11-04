@@ -7,9 +7,15 @@ dependencies {
   embeddedImpl 'org.apache.oltu.oauth2:org.apache.oltu.oauth2.client:1.0.2'
   embeddedImpl 'com.auth0:java-jwt:4.4.0'
   embeddedImpl 'com.auth0:jwks-rsa:0.22.1'
-  // Force upgrade on dependency to address secuirty vulnerabilities
-  // This lib is required by org.apache.oltu.oauth2:org.apache.oltu.oauth2.client:1.0.2
+
+  // Force upgrades on transitive dependencies to address security vulnerabilities
+  // Required by org.apache.oltu.oauth2:org.apache.oltu.oauth2.client:1.0.2
   embeddedImpl 'org.json:json:20240303'
+  // Required by com.auth0:java-jwt and com.auth0:jwks-rsa (CVE-2026-54512/54513/68494/68497/89425/91776/91777)
+  embeddedImpl 'com.fasterxml.jackson.core:jackson-databind:2.18.11'
+  embeddedImpl 'com.fasterxml.jackson.core:jackson-core:2.18.11'
+  // Required by com.auth0:jwks-rsa (CVE-2026-102554)
+  embeddedImpl 'com.google.guava:guava:33.7.2-jre'
 }
 
 // add info to OSGi manifest
