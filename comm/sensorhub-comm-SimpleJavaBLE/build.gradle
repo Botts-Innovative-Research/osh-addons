@@ -1,5 +1,6 @@
-description = 'BLE Communication Provider'
-ext.details = 'Cross-platform Bluetooth Low Energy communication provider using SimpleBLE'
+description = 'SimpleJavaBLE Communication Provider'
+ext.details = 'Cross-platform Bluetooth Low Energy communication provider using SimpleJavaBLE'
+version = '1.0.0'
 
 def thisProjectDir = projectDir
 rootProject.allprojects {
