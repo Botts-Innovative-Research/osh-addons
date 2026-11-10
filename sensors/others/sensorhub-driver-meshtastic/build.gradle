@@ -4,13 +4,13 @@ plugins {
 }
 
 description = 'Meshtastic Driver'
-ext.details = "Driver that utilizes a meshtastic Radio pre-configured with meshtastic Node Software to communicate with other meshtastic Radio"
-version = '1.0.2'
+ext.details = "Driver that utilizes a meshtastic Radio pre-configured with meshtastic Node Software to communicate with other meshtastic Radios"
+version = '2.0.0'
 
 
 dependencies {
     implementation 'org.sensorhub:sensorhub-core:' + oshCoreVersion
-    implementation project(':sensorhub-comm-bluetooth')
+    implementation project(':sensorhub-comm-SimpleJavaBLE')
     implementation 'org.simpleble:simplejavable:1.1.0'
     embeddedImpl "com.google.protobuf:protobuf-java:4.28.2"
     testImplementation "junit:junit:4.13.1"

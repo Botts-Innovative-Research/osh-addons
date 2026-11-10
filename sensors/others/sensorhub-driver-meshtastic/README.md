@@ -24,7 +24,7 @@ Uses the **JSSC Serial Comm Provider** (`sensorhub-comm-jssc`).
 
 ### Option 2: Bluetooth Low Energy (BLE)
 
-Uses the **BLE Communication Provider** (`sensorhub-comm-bluetooth`).
+Uses the **SimpleJavaBLE Communication Provider** (`sensorhub-comm-SimpleJavaBLE`).
 
 **Required settings:**
 | Setting | Value |
