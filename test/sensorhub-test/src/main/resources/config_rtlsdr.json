@@ -1,0 +1,153 @@
+[
+  {
+    "objClass": "org.sensorhub.impl.service.HttpServerConfig",
+    "httpPort": 8181,
+    "httpsPort": 0,
+    "staticDocsRootUrl": "/",
+    "staticDocsRootDir": "web",
+    "servletsRootUrl": "/sensorhub",
+    "authMethod": "BASIC",
+    "keyStorePath": ".keystore/ssl_keys",
+    "keyAlias": "jetty",
+    "trustStorePath": ".keystore/ssl_trust",
+    "enableCORS": true,
+    "id": "5cb05c9c-9e08-4fa1-8731-ffaa5846bdc1",
+    "autoStart": true,
+    "moduleClass": "org.sensorhub.impl.service.HttpServer",
+    "name": "HTTP Server"
+  },
+  {
+    "objClass": "org.sensorhub.ui.AdminUIConfig",
+    "widgetSet": "org.sensorhub.ui.SensorHubWidgetSet",
+    "bundleRepoUrls": [],
+    "customPanels": [
+      {
+        "objClass": "org.sensorhub.ui.CustomUIConfig",
+        "configClass": "org.sensorhub.impl.sensor.rtlsdr.RtlSdrConfig",
+        "uiClass": "org.sensorhub.impl.sensor.rtlsdr.ui.RtlSdrAdminPanel"
+      }
+    ],
+    "customForms": [],
+    "enableLandingPage": false,
+    "id": "5cb05c9c-9123-4fa1-8731-ffaa51489678",
+    "autoStart": true,
+    "moduleClass": "org.sensorhub.ui.AdminUIModule",
+    "name": "Admin UI"
+  },
+  {
+    "objClass": "org.sensorhub.impl.security.BasicSecurityRealmConfig",
+    "users": [
+      {
+        "objClass": "org.sensorhub.impl.security.BasicSecurityRealmConfig$UserConfig",
+        "id": "admin",
+        "password": "test",
+        "roles": [
+          "admin"
+        ],
+        "allow": [],
+        "deny": []
+      }
+    ],
+    "roles": [
+      {
+        "objClass": "org.sensorhub.impl.security.BasicSecurityRealmConfig$RoleConfig",
+        "id": "admin",
+        "allow": [
+          "*",
+          "webadmin[*]"
+        ],
+        "deny": []
+      }
+    ],
+    "id": "bd112969-8838-4f62-8d10-1edf1baa6669",
+    "autoStart": true,
+    "moduleClass": "org.sensorhub.impl.security.BasicSecurityRealm",
+    "name": "Users"
+  },
+  {
+    "objClass": "org.sensorhub.impl.sensor.rtlsdr.RtlSdrConfig",
+    "operatingMode": "SPECTRUM_AUDIO",
+    "serialNumber": "rtlsdr001",
+    "deviceIndex": 0,
+    "centerFrequency": 98.9,
+    "sampleRate": 2000000,
+    "tunerGain": 10.0,
+    "autoGain": false,
+    "agcMode": false,
+    "ppmCorrection": 0,
+    "directSampling": 0,
+    "fftSize": 1024,
+    "audioMode": "OFF",
+    "audioVolume": 40,
+    "squelchThreshold": -65.0,
+    "cwBfoToneHz": 700.0,
+    "lastUpdated": "2026-11-03T17:57:05.230-0500",
+    "id": "e4a21010-8838-4f62-8d10-1edf1baa7777",
+    "autoStart": true,
+    "moduleClass": "org.sensorhub.impl.sensor.rtlsdr.RtlSdrDriver",
+    "name": "RTL-SDR Receiver"
+  },
+  {
+    "objClass": "org.sensorhub.impl.service.consys.ConSysApiServiceConfig",
+    "customFormats": [],
+    "security": {
+      "objClass": "org.sensorhub.api.security.SecurityConfig",
+      "enableAccessControl": false,
+      "requireAuth": true
+    },
+    "enableTransactional": false,
+    "maxResponseLimit": 100000,
+    "defaultLiveTimeout": 600.0,
+    "uriPrefixMap": [],
+    "threadPoolSize": 0,
+    "ogcCapabilitiesInfo": {
+      "objClass": "org.sensorhub.impl.service.ogc.OGCServiceConfig$CapabilitiesInfo",
+      "serviceProvider": {
+        "objClass": "org.vast.util.ResponsibleParty",
+        "voiceNumbers": [],
+        "faxNumbers": [],
+        "deliveryPoints": [],
+        "emails": [],
+        "hrefPresent": false
+      }
+    },
+    "enableHttpGET": true,
+    "enableHttpPOST": true,
+    "enableSOAP": true,
+    "endPoint": "/api",
+    "id": "849f7452-13b2-4f22-bb53-eff4f9f0c535",
+    "autoStart": true,
+    "moduleClass": "org.sensorhub.impl.service.consys.ConSysApiService",
+    "name": "Connected Systems API Service"
+  },
+  {
+    "objClass": "org.sensorhub.impl.database.system.SystemDriverDatabaseConfig",
+    "dbConfig": {
+      "objClass": "org.sensorhub.impl.datastore.h2.MVObsSystemDatabaseConfig",
+      "indexObsLocation": false,
+      "storagePath": "rtlsdr.dat",
+      "memoryCacheSize": 5120,
+      "autoCommitBufferSize": 1024,
+      "autoCommitPeriod": 10,
+      "autoCompactFillRate": 40,
+      "idProviderType": "SEQUENTIAL",
+      "useCompression": false,
+      "readOnly": false,
+      "compactOnClose": false,
+      "printDebugInfoOnClose": false,
+      "id": "f2fb0f04-c14b-44f8-b2bd-3080d8d169ae",
+      "autoStart": false,
+      "moduleClass": "org.sensorhub.impl.datastore.h2.MVObsSystemDatabase"
+    },
+    "systemUIDs": [
+      "urn:osh:sensor:rtlsdr:rtlsdr001"
+    ],
+    "autoPurgeConfig": [],
+    "minCommitPeriod": 10000,
+    "databaseNum": 1,
+    "id": "87c22570-dcc8-43f7-947c-8927a46bbf2b",
+    "autoStart": true,
+    "moduleClass": "org.sensorhub.impl.database.system.SystemDriverDatabase",
+    "name": "RTL-SDR DB"
+  }
+]

@@ -15,8 +15,7 @@ if (gradle.hasProperty('oshCoreDir') && new File(gradle.oshCoreDir).exists()) {
 def excludedProjects = [
   'sensorhub-storage-ndbc',
   'sensorhub-driver-nexrad', // TODO update driver to use newest version of osh-core
-  'sensorhub-driver-usgswater', // TODO update driver to use newest version of osh-core
-  'sensorhub-test'
+  'sensorhub-driver-usgswater' // TODO update driver to use newest version of osh-core
 ]
 FileTree subprojects = fileTree(rootDir).exclude('dist').include('**/build.gradle')
 subprojects.files.each { File f ->

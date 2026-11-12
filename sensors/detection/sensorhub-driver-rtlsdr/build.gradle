@@ -1,0 +1,37 @@
+description = 'RTL-SDR'
+ext.details = "RTL-SDR Receiver Driver"
+version = '0.1.0'
+
+dependencies {
+    implementation 'org.sensorhub:sensorhub-core:' + oshCoreVersion
+    compileOnly 'org.sensorhub:sensorhub-webui-core:' + oshCoreVersion
+    compileOnly 'com.vaadin:vaadin-server:8.14.3'
+    embeddedImpl 'net.java.dev.jna:jna:5.14.0'
+    testImplementation('junit:junit:4.13.1')
+}
+
+// exclude tests requiring connection to the sensor
+// these have to be run manually
+test {
+    useJUnit()
+}
+
+// add info to OSGi manifest
+osgi {
+    manifest {
+        attributes ('Bundle-Vendor': 'Botts Inc')
+        attributes ('Bundle-Activator': 'org.sensorhub.impl.sensor.rtlsdr.Activator')
+    }
+}
+
+// add info to maven pom
+ext.pom >>= {
+    developers {
+        developer {
+            id 'BobMcCaskey'
+            name 'Bob McCaskey'
+            organization 'GeoRobotiX, Inc.'
+            organizationUrl 'https://georobotix.us/'
+        }
+    }
+}
