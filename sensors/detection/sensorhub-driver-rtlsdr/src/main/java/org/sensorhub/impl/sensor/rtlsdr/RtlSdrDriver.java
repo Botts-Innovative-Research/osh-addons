@@ -25,6 +25,9 @@ import org.sensorhub.impl.sensor.rtlsdr.outputs.RtlSdrOutputSpectrum;
 import org.vast.ogc.om.MovingFeature;
 
 import java.io.IOException;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Driver implementation for the RTL-SDR software-defined radio receiver.
@@ -42,6 +45,7 @@ public class RtlSdrDriver extends AbstractSensorModule<RtlSdrConfig> {
     private RtlSdrOutputAdsb outputAdsb;
     private RtlSdrOutputAis outputAis;
     private final RtlSdrAudioDemodulator audioDemodulator = new RtlSdrAudioDemodulator();
+    private ScheduledExecutorService keepAliveExecutor;
 
     @Override
     public void doInit() throws SensorHubException {
@@ -74,6 +78,9 @@ public class RtlSdrDriver extends AbstractSensorModule<RtlSdrConfig> {
         outputAdsb = new RtlSdrOutputAdsb(this);
         addOutput(outputAdsb, false);
         outputAdsb.doInit();
+        if (config != null && outputAdsb.getDecoder() != null) {
+            outputAdsb.getDecoder().setReceiverLocation(config.receiverLat, config.receiverLon);
+        }
 
         outputAis = new RtlSdrOutputAis(this);
         addOutput(outputAis, false);
@@ -90,6 +97,9 @@ public class RtlSdrDriver extends AbstractSensorModule<RtlSdrConfig> {
                 audioDemodulator.setVolume(config.audioVolume / 100.0f);
                 audioDemodulator.setSquelchThresholdDb((float) config.squelchThreshold);
                 audioDemodulator.setCwBfoPitchHz((float) config.cwBfoToneHz);
+                if (outputAdsb != null && outputAdsb.getDecoder() != null) {
+                    outputAdsb.getDecoder().setReceiverLocation(config.receiverLat, config.receiverLon);
+                }
                 publishCurrentSettings();
             } catch (IOException e) {
                 throw new SensorHubException("Failed to reconfigure RTL-SDR: " + e.getMessage(), e);
@@ -109,6 +119,9 @@ public class RtlSdrDriver extends AbstractSensorModule<RtlSdrConfig> {
             config.centerFrequency = 1090.0;
             config.sampleRate = 2000000;
             config.audioMode = RtlSdrConfig.AudioDemodMode.OFF;
+            if (outputAdsb != null && outputAdsb.getDecoder() != null) {
+                outputAdsb.getDecoder().setReceiverLocation(config.receiverLat, config.receiverLon);
+            }
         } else if (config.operatingMode == RtlSdrConfig.OperatingMode.AIS_RECEIVER) {
             config.centerFrequency = 162.0;
             config.sampleRate = 2048000;
@@ -156,12 +169,17 @@ public class RtlSdrDriver extends AbstractSensorModule<RtlSdrConfig> {
                 if (device != null) {
                     try {
                         device.close();
-                    } catch (Throwable ignored) {
+                    } catch (Throwable t) {
+                        getLogger().warn("Error closing existing RTL-SDR device: {}", t.getMessage());
+                    } finally {
+                        device = null;
                     }
                 }
                 device = new RtlSdrDevice();
                 getLogger().info("Opening RTL-SDR device index: {}", config.deviceIndex);
                 device.open(config.deviceIndex);
+            } else {
+                getLogger().info("Reusing open RTL-SDR device handle (index: {})", device.getCurrentDeviceIndex());
             }
 
             configureDevice();
@@ -212,6 +230,15 @@ public class RtlSdrDriver extends AbstractSensorModule<RtlSdrConfig> {
             // Publish initial settings
             publishCurrentSettings();
 
+            // Schedule periodic settings heartbeat (every 30 seconds) to prevent WebSocket idle timeout
+            stopKeepAliveExecutor();
+            keepAliveExecutor = Executors.newSingleThreadScheduledExecutor(r -> {
+                Thread t = new Thread(r, "RtlSdr-Heartbeat");
+                t.setDaemon(true);
+                return t;
+            });
+            keepAliveExecutor.scheduleAtFixedRate(this::publishCurrentSettings, 30, 30, TimeUnit.SECONDS);
+
         } catch (Throwable t) {
             getLogger().error("Failed to start RTL-SDR device", t);
             if (device != null) {
@@ -228,6 +255,7 @@ public class RtlSdrDriver extends AbstractSensorModule<RtlSdrConfig> {
 
     @Override
     public void doStop() throws SensorHubException {
+        stopKeepAliveExecutor();
         if (device != null && device.isOpen()) {
             try {
                 device.stopStreaming();
@@ -239,8 +267,20 @@ public class RtlSdrDriver extends AbstractSensorModule<RtlSdrConfig> {
         super.doStop();
     }
 
+    private void stopKeepAliveExecutor() {
+        if (keepAliveExecutor != null) {
+            try {
+                keepAliveExecutor.shutdownNow();
+            } catch (Throwable ignored) {
+            } finally {
+                keepAliveExecutor = null;
+            }
+        }
+    }
+
     @Override
     public void cleanup() {
+        stopKeepAliveExecutor();
         if (device != null) {
             try {
                 device.close();

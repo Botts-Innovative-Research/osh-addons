@@ -25,6 +25,11 @@ import org.vast.swe.SWEConstants;
 import org.vast.swe.SWEHelper;
 import org.vast.swe.helper.GeoPosHelper;
 
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
 /**
  * OpenSensorHub sensor output providing structured SWE DataRecords for Marine AIS vessel tracks.
  */
@@ -36,6 +41,10 @@ public class RtlSdrOutputAis extends AbstractSensorOutput<RtlSdrDriver> {
     private final AisDecoder decoder = new AisDecoder();
     private DataRecord dataStruct;
     private DataEncoding dataEncoding;
+
+    // Asynchronous dispatch queue so slow/reconnecting web subscribers never block the native USB streaming thread
+    private final BlockingQueue<VesselState> dispatchQueue = new ArrayBlockingQueue<>(1000);
+    private ExecutorService dispatchExecutor;
 
     public RtlSdrOutputAis(RtlSdrDriver parentSensor) {
         super(OUTPUT_NAME, parentSensor);
@@ -105,7 +114,14 @@ public class RtlSdrOutputAis extends AbstractSensorOutput<RtlSdrDriver> {
         dataStruct = recordBuilder.build();
         dataEncoding = sweHelper.newTextEncoding(",", "\n");
 
-        decoder.addListener(this::publishVesselState);
+        decoder.addListener(this::enqueueVesselState);
+
+        dispatchExecutor = Executors.newSingleThreadExecutor(r -> {
+            Thread t = new Thread(r, "Ais-DispatchWorker");
+            t.setDaemon(true);
+            return t;
+        });
+        dispatchExecutor.submit(this::processDispatchQueue);
     }
 
     public AisDecoder getDecoder() {
@@ -116,9 +132,37 @@ public class RtlSdrOutputAis extends AbstractSensorOutput<RtlSdrDriver> {
         decoder.processSamples(buffer, len, inRateHz);
     }
 
+    private void enqueueVesselState(VesselState state) {
+        // Drop frames if queue is full rather than blocking native USB streaming
+        dispatchQueue.offer(state);
+    }
+
+    private void processDispatchQueue() {
+        while (!Thread.currentThread().isInterrupted()) {
+            try {
+                VesselState state = dispatchQueue.take();
+                publishVesselState(state);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
+            } catch (Throwable t) {
+                getLogger().error("Error in AIS dispatch worker: {}", t.getMessage());
+            }
+        }
+    }
+
     public synchronized void publishVesselState(VesselState state) {
+        if (state == null) {
+            return;
+        }
+
         try {
             String foiUID = parentSensor.addOrUpdateVesselFoi(state.mmsi, state.vesselName);
+
+            // Do not publish SWE observation until a valid geographic position fix is available
+            if (Double.isNaN(state.lat) || Double.isNaN(state.lon)) {
+                return;
+            }
 
             DataBlock dataBlock;
             if (latestRecord == null) {
@@ -135,8 +179,8 @@ public class RtlSdrOutputAis extends AbstractSensorOutput<RtlSdrDriver> {
             dataBlock.setStringValue(idx++, state.callsign != null ? state.callsign : "");
             dataBlock.setDoubleValue(idx++, !Double.isNaN(state.sog) ? state.sog : 0.0);
             dataBlock.setBooleanValue(idx++, state.positionAccuracy);
-            dataBlock.setDoubleValue(idx++, !Double.isNaN(state.lat) ? state.lat : 0.0);
-            dataBlock.setDoubleValue(idx++, !Double.isNaN(state.lon) ? state.lon : 0.0);
+            dataBlock.setDoubleValue(idx++, state.lat);
+            dataBlock.setDoubleValue(idx++, state.lon);
             dataBlock.setDoubleValue(idx++, !Double.isNaN(state.cog) ? state.cog : 0.0);
             dataBlock.setDoubleValue(idx++, !Double.isNaN(state.heading) ? state.heading : 0.0);
             dataBlock.setStringValue(idx++, state.navStatus != null ? state.navStatus : "");

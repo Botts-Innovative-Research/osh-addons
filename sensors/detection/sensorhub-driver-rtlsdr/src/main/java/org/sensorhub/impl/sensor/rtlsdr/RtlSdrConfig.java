@@ -85,4 +85,10 @@ public class RtlSdrConfig extends SensorConfig {
 
     @DisplayInfo(label = "CW BFO Pitch (Hz)", desc = "Beat Frequency Oscillator pitch for CW Morse code reception (typically 600-800 Hz)")
     public double cwBfoToneHz = 700.0;
+
+    @DisplayInfo(label = "Receiver Latitude", desc = "Reference latitude of the ground station receiver (optional, enables instant 1-frame ADS-B local CPR decoding)")
+    public double receiverLat = Double.NaN;
+
+    @DisplayInfo(label = "Receiver Longitude", desc = "Reference longitude of the ground station receiver (optional, enables instant 1-frame ADS-B local CPR decoding)")
+    public double receiverLon = Double.NaN;
 }

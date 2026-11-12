@@ -81,6 +81,15 @@ public class AdsbDecoder {
     private short[] magBuffer = new short[131072];
     private int magBufferLen = 0;
 
+    // Optional ground station reference coordinates for 1-frame local CPR decoding
+    private volatile double receiverLat = Double.NaN;
+    private volatile double receiverLon = Double.NaN;
+
+    public void setReceiverLocation(double lat, double lon) {
+        this.receiverLat = lat;
+        this.receiverLon = lon;
+    }
+
     public void addListener(AdsbListener listener) {
         listeners.add(listener);
     }
@@ -135,14 +144,13 @@ public class AdsbDecoder {
 
             // Pulses must be peaks relative to adjacent slots
             if (p0 > p1 && p2 > p3 && p7 > p6 && p9 > p8) {
-                int highEnergy = p0 + p2 + p7 + p9;
-                int lowEnergy = p1 + p3 + p4 + p5 + p6 + p8;
+                int peakSum = p0 + p2 + p7 + p9;
+                int highThreshold = peakSum / 6;
 
-                // Peak energy must exceed valleys and minimum threshold
-                if (highEnergy > (lowEnergy * 2) && highEnergy > 1600) {
+                // Valleys must be below threshold, and peak energy must meet minimum noise floor
+                if (p4 < highThreshold && p5 < highThreshold && peakSum > 1000) {
                     // Demodulate PPM data bits (112 bits = 224 samples starting at offset 16)
                     int dataOffset = i + PREAMBLE_US_SAMPLES;
-                    boolean valid = true;
 
                     for (int bit = 0; bit < LONG_FRAME_BITS; bit++) {
                         int s0 = magBuffer[dataOffset + bit * 2];
@@ -223,7 +231,7 @@ public class AdsbDecoder {
     /**
      * Decode DF=17 Extended Squitter payload.
      */
-    private void decodeExtendedSquitter(byte[] msg) {
+    public void decodeExtendedSquitter(byte[] msg) {
         int icao = ((msg[1] & 0xFF) << 16) | ((msg[2] & 0xFF) << 8) | (msg[3] & 0xFF);
         String icaoHex = String.format("%06X", icao);
 
@@ -256,6 +264,16 @@ public class AdsbDecoder {
             state.callsign = sb.toString().trim();
             notifyListeners(state);
         }
+        // TC 5-8: Surface Position
+        else if (tc >= 5 && tc <= 8) {
+            state.isOnGround = true;
+            boolean odd = (msg[6] & 0x04) != 0;
+            int cprLat = (((msg[6] & 0x03) << 15) | ((msg[7] & 0xFF) << 7) | ((msg[8] >> 1) & 0x7F));
+            int cprLon = (((msg[8] & 0x01) << 16) | ((msg[9] & 0xFF) << 8) | (msg[10] & 0xFF));
+
+            decodeCprPosition(state, odd, cprLat, cprLon, true);
+            notifyListeners(state);
+        }
         // TC 9-18: Airborne Position (w/ Barometric Altitude)
         else if (tc >= 9 && tc <= 18) {
             state.isOnGround = false;
@@ -273,7 +291,7 @@ public class AdsbDecoder {
             int cprLat = (((msg[6] & 0x03) << 15) | ((msg[7] & 0xFF) << 7) | ((msg[8] >> 1) & 0x7F));
             int cprLon = (((msg[8] & 0x01) << 16) | ((msg[9] & 0xFF) << 8) | (msg[10] & 0xFF));
 
-            decodeCprPosition(state, odd, cprLat, cprLon);
+            decodeCprPosition(state, odd, cprLat, cprLon, false);
             notifyListeners(state);
         }
         // TC 19: Airborne Velocity
@@ -304,6 +322,21 @@ public class AdsbDecoder {
                 notifyListeners(state);
             }
         }
+        // TC 20-22: Airborne Position (w/ GNSS/Geometric Altitude)
+        else if (tc >= 20 && tc <= 22) {
+            state.isOnGround = false;
+            int rawAlt = ((msg[5] & 0xFF) << 4) | ((msg[6] >> 4) & 0x0F);
+            if (rawAlt > 0) {
+                state.altGeoFt = rawAlt * 3.28084; // meters to feet
+            }
+
+            boolean odd = (msg[6] & 0x04) != 0;
+            int cprLat = (((msg[6] & 0x03) << 15) | ((msg[7] & 0xFF) << 7) | ((msg[8] >> 1) & 0x7F));
+            int cprLon = (((msg[8] & 0x01) << 16) | ((msg[9] & 0xFF) << 8) | (msg[10] & 0xFF));
+
+            decodeCprPosition(state, odd, cprLat, cprLon, false);
+            notifyListeners(state);
+        }
         // TC 28: Emergency Status / Squawk
         else if (tc == 28) {
             int subType = msg[4] & 0x07;
@@ -320,8 +353,10 @@ public class AdsbDecoder {
 
     /**
      * Compact Position Reporting (CPR) decoding (ICAO Annex 10 / RTCA DO-260B).
+     * Uses relative (local) CPR decoding first if a recent prior position or receiver position
+     * is available, otherwise falls back to global airborne CPR decoding across even/odd frame pairs.
      */
-    private void decodeCprPosition(AircraftState state, boolean odd, int cprLat, int cprLon) {
+    private void decodeCprPosition(AircraftState state, boolean odd, int cprLat, int cprLon, boolean surface) {
         long now = System.currentTimeMillis();
         if (odd) {
             state.oddCprLat = cprLat;
@@ -333,7 +368,33 @@ public class AdsbDecoder {
             state.evenCprTime = now;
         }
 
-        // Both even and odd reports must be available within 10 seconds of each other
+        // 1. Try Relative (Local) CPR Decoding if we have a recent reference position
+        // Reference candidate A: Aircraft's own previous valid coordinates (valid if seen within 60 seconds)
+        double refLat = Double.NaN;
+        double refLon = Double.NaN;
+        if (!Double.isNaN(state.lat) && !Double.isNaN(state.lon) && (now - state.lastSeenTime) < 60000) {
+            refLat = state.lat;
+            refLon = state.lon;
+        } else if (!Double.isNaN(receiverLat) && !Double.isNaN(receiverLon)) {
+            // Reference candidate B: Configured ground receiver location
+            refLat = receiverLat;
+            refLon = receiverLon;
+        }
+
+        if (!Double.isNaN(refLat) && !Double.isNaN(refLon)) {
+            double[] relPos = decodeCprRelative(refLat, refLon, cprLat, cprLon, odd, surface);
+            if (relPos != null) {
+                state.lat = Math.round(relPos[0] * 100000.0) / 100000.0;
+                state.lon = Math.round(relPos[1] * 100000.0) / 100000.0;
+                return;
+            }
+        }
+
+        // 2. Global CPR Decoding: requires both even and odd messages within 10 seconds
+        if (surface) {
+            return; // Surface position requires relative decoding with reference location
+        }
+
         if (Math.abs(state.evenCprTime - state.oddCprTime) > 10000 || state.evenCprTime == 0 || state.oddCprTime == 0) {
             return;
         }
@@ -376,6 +437,56 @@ public class AdsbDecoder {
             state.lat = Math.round(finalLat * 100000.0) / 100000.0;
             state.lon = Math.round(finalLon * 100000.0) / 100000.0;
         }
+    }
+
+    /**
+     * Relative (Local) CPR Decoding per RTCA DO-260B / 1090-WP29-07.
+     * Reconstructs exact latitude/longitude from a single CPR frame given a known reference position
+     * within 1/2 cell (~180 NM airborne, ~45 NM surface).
+     *
+     * @return double[2] { lat, lon } or null if invalid/out-of-cell
+     */
+    public static double[] decodeCprRelative(double reflat, double reflon, int cprLat, int cprLon, boolean odd, boolean surface) {
+        double airDlat = (surface ? 90.0 : 360.0) / (odd ? 59.0 : 60.0);
+        double fractionalLat = cprLat / 131072.0;
+        double fractionalLon = cprLon / 131072.0;
+
+        // Latitude index j
+        int j = (int) (Math.floor(reflat / airDlat) +
+                Math.floor(0.5 + modDouble(reflat, airDlat) / airDlat - fractionalLat));
+        double rLat = airDlat * (j + fractionalLat);
+        if (rLat >= 270.0) rLat -= 360.0;
+
+        if (rLat < -90.0 || rLat > 90.0) {
+            return null;
+        }
+        if (Math.abs(rLat - reflat) > (airDlat / 2.0)) {
+            return null; // Exceeds 1/2 cell ambiguity boundary
+        }
+
+        // Longitude index m
+        int nl = cprNl(rLat);
+        int ni = nl - (odd ? 1 : 0);
+        if (ni < 1) ni = 1;
+        double airDlon = (surface ? 90.0 : 360.0) / ni;
+
+        int m = (int) (Math.floor(reflon / airDlon) +
+                Math.floor(0.5 + modDouble(reflon, airDlon) / airDlon - fractionalLon));
+        double rLon = airDlon * (m + fractionalLon);
+        if (rLon > 180.0) rLon -= 360.0;
+        if (rLon < -180.0) rLon += 360.0;
+
+        if (Math.abs(rLon - reflon) > (airDlon / 2.0)) {
+            return null;
+        }
+
+        return new double[]{rLat, rLon};
+    }
+
+    private static double modDouble(double a, double b) {
+        double res = a % b;
+        if (res < 0) res += b;
+        return res;
     }
 
     private static int cprNl(double lat) {

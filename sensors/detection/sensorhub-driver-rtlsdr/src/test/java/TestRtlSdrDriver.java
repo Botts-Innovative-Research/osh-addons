@@ -116,6 +116,52 @@ public class TestRtlSdrDriver {
     }
 
     @Test
+    public void testAdsbCprGlobalAndRelativeDecoding() {
+        // Standard test Mode S Extended Squitter message pair (DF=17, ICAO: 40621D)
+        // Even: 8D40621D58C382D690C8AC2863A7
+        // Odd:  8D40621D58C386435CC41269201F
+        byte[] evenMsg = new byte[] {
+                (byte) 0x8D, (byte) 0x40, (byte) 0x62, (byte) 0x1D,
+                (byte) 0x58, (byte) 0xC3, (byte) 0x82, (byte) 0xD6,
+                (byte) 0x90, (byte) 0xC8, (byte) 0xAC,
+                (byte) 0x28, (byte) 0x63, (byte) 0xA7
+        };
+        byte[] oddMsg = new byte[] {
+                (byte) 0x8D, (byte) 0x40, (byte) 0x62, (byte) 0x1D,
+                (byte) 0x58, (byte) 0xC3, (byte) 0x86, (byte) 0x43,
+                (byte) 0x5C, (byte) 0xC4, (byte) 0x12,
+                (byte) 0x69, (byte) 0x20, (byte) 0x1F
+        };
+
+        // 1. Test Global CPR Decoding (no receiver location configured)
+        org.sensorhub.impl.sensor.rtlsdr.dsp.AdsbDecoder globalDecoder = new org.sensorhub.impl.sensor.rtlsdr.dsp.AdsbDecoder();
+        globalDecoder.decodeExtendedSquitter(evenMsg);
+        org.sensorhub.impl.sensor.rtlsdr.dsp.AdsbDecoder.AircraftState state = globalDecoder.getAircraftMap().get("40621D");
+        assertNotNull(state);
+        // Only 1 frame received without reference location -> position should not yet be known (NaN)
+        assertTrue("Position should be NaN until second CPR frame arrives", Double.isNaN(state.lat));
+
+        // Now supply the odd frame
+        globalDecoder.decodeExtendedSquitter(oddMsg);
+        assertFalse("Latitude should be resolved after even/odd pair", Double.isNaN(state.lat));
+        assertFalse("Longitude should be resolved after even/odd pair", Double.isNaN(state.lon));
+        assertEquals(52.257, state.lat, 0.01);
+        assertEquals(3.939, state.lon, 0.01);
+        assertEquals(38000.0, state.altBaroFt, 100.0);
+
+        // 2. Test Relative CPR Decoding with receiver reference location (instant 1-frame fix)
+        org.sensorhub.impl.sensor.rtlsdr.dsp.AdsbDecoder relDecoder = new org.sensorhub.impl.sensor.rtlsdr.dsp.AdsbDecoder();
+        relDecoder.setReceiverLocation(52.0, 4.0); // Receiver near the aircraft
+        relDecoder.decodeExtendedSquitter(evenMsg); // Supply ONLY even frame
+        org.sensorhub.impl.sensor.rtlsdr.dsp.AdsbDecoder.AircraftState relState = relDecoder.getAircraftMap().get("40621D");
+        assertNotNull(relState);
+        assertFalse("Relative CPR should resolve latitude on a single frame with receiver location", Double.isNaN(relState.lat));
+        assertFalse("Relative CPR should resolve longitude on a single frame with receiver location", Double.isNaN(relState.lon));
+        assertEquals(52.257, relState.lat, 0.01);
+        assertEquals(3.919, relState.lon, 0.01);
+    }
+
+    @Test
     public void testAisDecoder() {
         org.sensorhub.impl.sensor.rtlsdr.dsp.AisDecoder decoder = new org.sensorhub.impl.sensor.rtlsdr.dsp.AisDecoder();
         assertNotNull(decoder.getVesselMap());

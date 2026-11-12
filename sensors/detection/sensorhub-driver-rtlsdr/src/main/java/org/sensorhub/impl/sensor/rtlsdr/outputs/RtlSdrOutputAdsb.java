@@ -25,6 +25,11 @@ import org.vast.swe.SWEConstants;
 import org.vast.swe.SWEHelper;
 import org.vast.swe.helper.GeoPosHelper;
 
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
 /**
  * OpenSensorHub sensor output providing structured SWE DataRecords for 1090 MHz ADS-B aircraft tracks.
  */
@@ -36,6 +41,10 @@ public class RtlSdrOutputAdsb extends AbstractSensorOutput<RtlSdrDriver> {
     private final AdsbDecoder decoder = new AdsbDecoder();
     private DataRecord dataStruct;
     private DataEncoding dataEncoding;
+
+    // Asynchronous dispatch queue so slow/reconnecting web subscribers never block the native USB streaming thread
+    private final BlockingQueue<AircraftState> dispatchQueue = new ArrayBlockingQueue<>(1000);
+    private ExecutorService dispatchExecutor;
 
     public RtlSdrOutputAdsb(RtlSdrDriver parentSensor) {
         super(OUTPUT_NAME, parentSensor);
@@ -106,7 +115,14 @@ public class RtlSdrOutputAdsb extends AbstractSensorOutput<RtlSdrDriver> {
         dataStruct = recordBuilder.build();
         dataEncoding = sweHelper.newTextEncoding(",", "\n");
 
-        decoder.addListener(this::publishAircraftState);
+        decoder.addListener(this::enqueueAircraftState);
+
+        dispatchExecutor = Executors.newSingleThreadExecutor(r -> {
+            Thread t = new Thread(r, "Adsb-DispatchWorker");
+            t.setDaemon(true);
+            return t;
+        });
+        dispatchExecutor.submit(this::processDispatchQueue);
     }
 
     public AdsbDecoder getDecoder() {
@@ -117,7 +133,31 @@ public class RtlSdrOutputAdsb extends AbstractSensorOutput<RtlSdrDriver> {
         decoder.processSamples(buffer, len, sampleRateHz);
     }
 
+    private void enqueueAircraftState(AircraftState state) {
+        // Drop frames if queue is full rather than blocking native USB streaming
+        dispatchQueue.offer(state);
+    }
+
+    private void processDispatchQueue() {
+        while (!Thread.currentThread().isInterrupted()) {
+            try {
+                AircraftState state = dispatchQueue.take();
+                publishAircraftState(state);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
+            } catch (Throwable t) {
+                getLogger().error("Error in ADS-B dispatch worker: {}", t.getMessage());
+            }
+        }
+    }
+
     public synchronized void publishAircraftState(AircraftState state) {
+        // Do not publish until a valid geographic position fix has been decoded
+        if (state == null || Double.isNaN(state.lat) || Double.isNaN(state.lon)) {
+            return;
+        }
+
         try {
             String foiUID = parentSensor.addOrUpdateAircraftFoi(state.icao, state.callsign);
 
@@ -128,13 +168,15 @@ public class RtlSdrOutputAdsb extends AbstractSensorOutput<RtlSdrDriver> {
                 dataBlock = latestRecord.renew();
             }
 
+            double alt = !Double.isNaN(state.altBaroFt) ? state.altBaroFt : (!Double.isNaN(state.altGeoFt) ? state.altGeoFt : 0.0);
+
             int idx = 0;
             dataBlock.setDoubleValue(idx++, System.currentTimeMillis() / 1000.0);
             dataBlock.setStringValue(idx++, state.icao);
             dataBlock.setStringValue(idx++, state.callsign != null ? state.callsign : "");
-            dataBlock.setDoubleValue(idx++, !Double.isNaN(state.lat) ? state.lat : 0.0);
-            dataBlock.setDoubleValue(idx++, !Double.isNaN(state.lon) ? state.lon : 0.0);
-            dataBlock.setDoubleValue(idx++, !Double.isNaN(state.altBaroFt) ? state.altBaroFt : 0.0);
+            dataBlock.setDoubleValue(idx++, state.lat);
+            dataBlock.setDoubleValue(idx++, state.lon);
+            dataBlock.setDoubleValue(idx++, alt);
             dataBlock.setDoubleValue(idx++, !Double.isNaN(state.altBaroFt) ? state.altBaroFt : 0.0);
             dataBlock.setDoubleValue(idx++, !Double.isNaN(state.groundSpeed) ? state.groundSpeed : 0.0);
             dataBlock.setDoubleValue(idx++, !Double.isNaN(state.track) ? state.track : 0.0);

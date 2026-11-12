@@ -280,7 +280,7 @@ public class AisDecoder {
         }
         crc = (~crc) & 0xFFFF;
 
-        if (crc == fcs || true) { // Also allow relaxed parse for weak signals
+        if (crc == fcs) {
             parseAisMessage(buffer, bitLen - 16);
         }
     }

@@ -102,8 +102,17 @@ public class RtlSdrDevice {
         }
         if (devPointer != null) {
             try {
+                // Ensure native async read loop has fully returned before closing device
+                if (asyncThread != null) {
+                    try {
+                        asyncThread.join(5000);
+                    } catch (InterruptedException ignored) {
+                        Thread.currentThread().interrupt();
+                    }
+                    asyncThread = null;
+                }
                 // Settle delay before native close to ensure cancelled async URB completion routines have completely finished
-                Thread.sleep(300);
+                Thread.sleep(500);
             } catch (InterruptedException ignored) {
                 Thread.currentThread().interrupt();
             }
@@ -123,7 +132,7 @@ public class RtlSdrDevice {
             }
             try {
                 // Post-close delay for Windows OS USB stack to release WinUSB interface
-                Thread.sleep(300);
+                Thread.sleep(500);
             } catch (InterruptedException ignored) {
                 Thread.currentThread().interrupt();
             }
@@ -320,7 +329,7 @@ public class RtlSdrDevice {
         }
         if (asyncThread != null) {
             try {
-                asyncThread.join(4000);
+                asyncThread.join(6000);
             } catch (InterruptedException ignored) {
                 Thread.currentThread().interrupt();
             }
@@ -328,7 +337,7 @@ public class RtlSdrDevice {
         }
         try {
             // Windows WinUSB settling delay to let cancelled asynchronous URB completion routines drain
-            Thread.sleep(500);
+            Thread.sleep(600);
         } catch (InterruptedException ignored) {
             Thread.currentThread().interrupt();
         }
