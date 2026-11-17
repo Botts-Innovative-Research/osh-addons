@@ -17,12 +17,20 @@ import org.sensorhub.api.module.ModuleEvent;
 import org.sensorhub.impl.sensor.AbstractSensorModule;
 import org.sensorhub.impl.sensor.rtlsdr.controls.RtlSdrControlReceiver;
 import org.sensorhub.impl.sensor.rtlsdr.dsp.RtlSdrAudioDemodulator;
+import org.sensorhub.impl.sensor.rtlsdr.dsp.RtlSdrAudioRecorder;
 import org.sensorhub.impl.sensor.rtlsdr.lib.RtlSdrDevice;
 import org.sensorhub.impl.sensor.rtlsdr.outputs.RtlSdrOutputAdsb;
 import org.sensorhub.impl.sensor.rtlsdr.outputs.RtlSdrOutputAis;
+import org.sensorhub.impl.sensor.rtlsdr.outputs.RtlSdrOutputAudio;
 import org.sensorhub.impl.sensor.rtlsdr.outputs.RtlSdrOutputSettings;
 import org.sensorhub.impl.sensor.rtlsdr.outputs.RtlSdrOutputSpectrum;
 import org.vast.ogc.om.MovingFeature;
+import org.vast.sensorML.SMLFactory;
+import org.vast.sensorML.SMLHelper;
+import org.vast.swe.SWEHelper;
+import net.opengis.sensorml.v20.ClassifierList;
+import net.opengis.sensorml.v20.IdentifierList;
+import net.opengis.sensorml.v20.Term;
 
 import java.io.IOException;
 import java.util.concurrent.Executors;
@@ -42,9 +50,11 @@ public class RtlSdrDriver extends AbstractSensorModule<RtlSdrConfig> {
     private RtlSdrControlReceiver controlReceiver;
     private RtlSdrOutputSettings outputSettings;
     private RtlSdrOutputSpectrum outputSpectrum;
+    private RtlSdrOutputAudio outputAudio;
     private RtlSdrOutputAdsb outputAdsb;
     private RtlSdrOutputAis outputAis;
     private final RtlSdrAudioDemodulator audioDemodulator = new RtlSdrAudioDemodulator();
+    private final RtlSdrAudioRecorder audioRecorder = new RtlSdrAudioRecorder();
     private ScheduledExecutorService keepAliveExecutor;
 
     @Override
@@ -85,6 +95,15 @@ public class RtlSdrDriver extends AbstractSensorModule<RtlSdrConfig> {
         outputAis = new RtlSdrOutputAis(this);
         addOutput(outputAis, false);
         outputAis.doInit();
+
+        outputAudio = new RtlSdrOutputAudio(this);
+        addOutput(outputAudio, false);
+        outputAudio.doInit();
+
+        // Wire audio listeners (streaming output & on-demand recorder)
+        audioDemodulator.addListener(outputAudio);
+        audioDemodulator.addListener(audioRecorder);
+        audioRecorder.setStatusListener((isRec, path, dur) -> publishCurrentSettings());
     }
 
     @Override
@@ -256,6 +275,9 @@ public class RtlSdrDriver extends AbstractSensorModule<RtlSdrConfig> {
     @Override
     public void doStop() throws SensorHubException {
         stopKeepAliveExecutor();
+        if (audioRecorder != null && audioRecorder.isRecording()) {
+            audioRecorder.stopRecording();
+        }
         if (device != null && device.isOpen()) {
             try {
                 device.stopStreaming();
@@ -417,6 +439,10 @@ public class RtlSdrDriver extends AbstractSensorModule<RtlSdrConfig> {
         return outputAis;
     }
 
+    public RtlSdrOutputAudio getOutputAudio() {
+        return outputAudio;
+    }
+
     public String addOrUpdateAircraftFoi(String icao, String callsign) {
         String foiUID = UID_PREFIX + "aircraft:" + icao;
         synchronized (foiMap) {
@@ -461,6 +487,101 @@ public class RtlSdrDriver extends AbstractSensorModule<RtlSdrConfig> {
         return device;
     }
 
+    public RtlSdrAudioRecorder getAudioRecorder() {
+        return audioRecorder;
+    }
+
+    public boolean isRecordingAudio() {
+        return audioRecorder != null && audioRecorder.isRecording();
+    }
+
+    public synchronized String setAudioRecording(boolean enable) throws CommandException {
+        if (enable) {
+            if (audioRecorder.isRecording()) {
+                return audioRecorder.getCurrentFilePath();
+            }
+            try {
+                String dir = config != null ? config.audioRecordingsDir : "recordings/rtlsdr";
+                String modeName = config != null && config.audioMode != null ? config.audioMode.name() : "AUDIO";
+                double freq = config != null ? config.centerFrequency : 98.0;
+                String path = audioRecorder.startRecording(dir, freq, modeName);
+                publishCurrentSettings();
+                return path;
+            } catch (IOException e) {
+                throw new CommandException("Failed to start audio recording: " + e.getMessage(), e);
+            }
+        } else {
+            String path = audioRecorder.stopRecording();
+            publishCurrentSettings();
+            return path;
+        }
+    }
+
+    @Override
+    protected void updateSensorDescription() {
+        synchronized (sensorDescLock) {
+            super.updateSensorDescription();
+
+            SMLFactory smlFac = new SMLFactory();
+
+            if (!sensorDescription.isSetDescription()) {
+                sensorDescription.setDescription("RTL-SDR USB Software Defined Radio Receiver based on Realtek RTL2832U demodulator and RF tuner");
+            }
+
+            // Identification
+            IdentifierList identifierList = smlFac.newIdentifierList();
+            sensorDescription.addIdentification(identifierList);
+
+            Term term = smlFac.newTerm();
+            term.setDefinition(SWEHelper.getPropertyUri("Manufacturer"));
+            term.setLabel("Manufacturer Name");
+            term.setValue("Realtek / RTL-SDR");
+            identifierList.addIdentifier(term);
+
+            term = smlFac.newTerm();
+            term.setDefinition(SWEHelper.getPropertyUri("ModelNumber"));
+            term.setLabel("Model Number");
+            term.setValue("RTL2832U");
+            identifierList.addIdentifier(term);
+
+            if (config != null && config.serialNumber != null && !config.serialNumber.isBlank()) {
+                term = smlFac.newTerm();
+                term.setDefinition(SWEHelper.getPropertyUri("SerialNumber"));
+                term.setLabel("Serial Number");
+                term.setValue(config.serialNumber);
+                identifierList.addIdentifier(term);
+            }
+
+            term = smlFac.newTerm();
+            term.setDefinition(SWEHelper.getPropertyUri("LongName"));
+            term.setLabel("Long Name");
+            term.setValue("RTL-SDR Software Defined Radio Receiver");
+            identifierList.addIdentifier(term);
+
+            term = smlFac.newTerm();
+            term.setDefinition(SWEHelper.getPropertyUri("ShortName"));
+            term.setLabel("Short Name");
+            term.setValue("RTL-SDR");
+            identifierList.addIdentifier(term);
+
+            // Classification
+            ClassifierList classifierList = smlFac.newClassifierList();
+            sensorDescription.addClassification(classifierList);
+
+            term = smlFac.newTerm();
+            term.setDefinition(SWEHelper.getPropertyUri("SensorType"));
+            term.setLabel("Sensor Type");
+            term.setValue("Software Defined Radio Receiver");
+            classifierList.addClassifier(term);
+
+            term = smlFac.newTerm();
+            term.setDefinition(SWEHelper.getPropertyUri("Application"));
+            term.setLabel("Application");
+            term.setValue("RF Spectrum Monitoring, Audio Demodulation, ADS-B Aircraft Tracking, Marine AIS Reception");
+            classifierList.addClassifier(term);
+        }
+    }
+
     private void publishCurrentSettings() {
         if (outputSettings != null) {
             outputSettings.publishSettings(
@@ -470,7 +591,8 @@ public class RtlSdrDriver extends AbstractSensorModule<RtlSdrConfig> {
                     config.autoGain,
                     config.agcMode,
                     config.ppmCorrection,
-                    device != null && device.isStreaming()
+                    device != null && device.isStreaming(),
+                    audioRecorder != null && audioRecorder.isRecording()
             );
         }
     }

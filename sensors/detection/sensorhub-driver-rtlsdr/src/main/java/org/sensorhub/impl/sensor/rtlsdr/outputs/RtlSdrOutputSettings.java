@@ -80,7 +80,11 @@ public class RtlSdrOutputSettings extends AbstractSensorOutput<RtlSdrDriver> {
                 .addField("streaming", sweFactory.createBoolean()
                         .label("Streaming Active")
                         .description("Indicates whether receiver is actively streaming samples")
-                        .definition(SWEHelper.getPropertyUri("StreamingActive")));
+                        .definition(SWEHelper.getPropertyUri("StreamingActive")))
+                .addField("recording", sweFactory.createBoolean()
+                        .label("Audio Recording Active")
+                        .description("Indicates whether audio demodulator output is actively being recorded to file")
+                        .definition(SWEHelper.getPropertyUri("AudioRecordingActive")));
 
         dataStruct = recordBuilder.build();
         dataEncoding = sweFactory.newTextEncoding(",", "\n");
@@ -102,7 +106,7 @@ public class RtlSdrOutputSettings extends AbstractSensorOutput<RtlSdrDriver> {
     }
 
     public synchronized void publishSettings(double centerFreqMHz, int sampleRateHz, double tunerGaindB,
-                                            boolean autoGain, boolean agcMode, int ppm, boolean isStreaming) {
+                                            boolean autoGain, boolean agcMode, int ppm, boolean isStreaming, boolean isRecording) {
         try {
             DataBlock dataBlock;
             if (latestRecord == null) {
@@ -120,6 +124,7 @@ public class RtlSdrOutputSettings extends AbstractSensorOutput<RtlSdrDriver> {
             dataBlock.setBooleanValue(5, agcMode);
             dataBlock.setIntValue(6, ppm);
             dataBlock.setBooleanValue(7, isStreaming);
+            dataBlock.setBooleanValue(8, isRecording);
 
             latestRecord = dataBlock;
             latestRecordTime = now;

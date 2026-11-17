@@ -1,6 +1,6 @@
 description = 'RTL-SDR'
 ext.details = "RTL-SDR Receiver Driver"
-version = '0.1.0'
+version = '0.3.0'
 
 dependencies {
     implementation 'org.sensorhub:sensorhub-core:' + oshCoreVersion

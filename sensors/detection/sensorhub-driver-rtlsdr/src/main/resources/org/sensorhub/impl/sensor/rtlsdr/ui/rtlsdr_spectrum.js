@@ -183,8 +183,10 @@ window.org_sensorhub_impl_sensor_rtlsdr_ui_RtlSdrSpectrumComponent = function() 
             }
             .rtlsdr-section-header {
                 display: flex;
+                flex-wrap: wrap;
                 align-items: center;
                 justify-content: space-between;
+                gap: 6px;
                 padding: 2px 4px;
                 font-size: 11px;
                 font-weight: 700;
@@ -261,6 +263,30 @@ window.org_sensorhub_impl_sensor_rtlsdr_ui_RtlSdrSpectrumComponent = function() 
                 box-shadow: 0 0 6px #f59e0b;
                 margin-right: 4px;
             }
+            .rtlsdr-btn-recording {
+                background: #dc2626 !important;
+                color: #fff !important;
+                animation: rtlsdr-pulse-btn 1.5s infinite;
+            }
+            @keyframes rtlsdr-pulse-btn {
+                0% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.7); }
+                70% { box-shadow: 0 0 0 8px rgba(220, 38, 38, 0); }
+                100% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0); }
+            }
+            .rtlsdr-pulse-rec {
+                display: inline-block;
+                width: 8px;
+                height: 8px;
+                border-radius: 50%;
+                background: #ef4444;
+                box-shadow: 0 0 6px #ef4444;
+                margin-right: 4px;
+                animation: rtlsdr-pulse-dot 1s infinite alternate;
+            }
+            @keyframes rtlsdr-pulse-dot {
+                from { opacity: 0.4; }
+                to { opacity: 1.0; }
+            }
         </style>
         <div class="rtlsdr-wrapper">
             <!-- Top Controls Toolbar -->
@@ -319,7 +345,8 @@ window.org_sensorhub_impl_sensor_rtlsdr_ui_RtlSdrSpectrumComponent = function() 
                     <span class="rtlsdr-label" style="color: #38bdf8;">Demod:</span>
                     <select id="audioModeSelect" class="rtlsdr-select" style="font-weight: 600;">
                         <option value="OFF">Audio Muted</option>
-                        <option value="WFM">WFM (Broadcast FM 88-108 MHz)</option>
+                        <option value="WFM_STEREO">WFM Stereo (Broadcast FM)</option>
+                        <option value="WFM">WFM Mono (Broadcast FM)</option>
                         <option value="NFM">NFM (Ham/Marine/VHF/NOAA)</option>
                         <option value="AM">AM (Airband 118-137 / HF)</option>
                         <option value="USB">USB (Upper Sideband / HF)</option>
@@ -327,6 +354,8 @@ window.org_sensorhub_impl_sensor_rtlsdr_ui_RtlSdrSpectrumComponent = function() 
                         <option value="CW">CW (Continuous Wave / Morse)</option>
                     </select>
                     <button id="audioListenBtn" class="rtlsdr-btn rtlsdr-btn-secondary" title="Start/Stop In-Browser Audio Playback">🔈 Listen</button>
+                    <button id="audioRecordBtn" class="rtlsdr-btn rtlsdr-btn-secondary" title="Start/Stop On-Demand Audio Recording to WAV">⏺ Record</button>
+                    <span id="audioRecordBadge" style="display:none; font-size:11px; font-family:monospace; color:#ef4444; font-weight:700;"><span class="rtlsdr-pulse-rec"></span>REC <span id="recordTimer">00:00</span></span>
                     <span id="audioStatusBadge" style="font-size: 11px; font-family: monospace; color: #64748b;">Muted</span>
                 </div>
 
@@ -347,10 +376,45 @@ window.org_sensorhub_impl_sensor_rtlsdr_ui_RtlSdrSpectrumComponent = function() 
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2.5"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
                     <span>Upper View: RF Spectrum Analyzer (Amplitude vs Frequency)</span>
                 </div>
-                <span id="spectrumRangeText" style="font-size:11px; font-family:monospace; color:#94a3b8;">Span: 2.048 MHz | 1024 bins</span>
+                <div style="display:flex; align-items:center; gap:8px;">
+                    <span class="rtlsdr-label" style="text-transform:none; font-size:11px;" title="Hardware Tuner RF Gain">Gain:</span>
+                    <button id="tunerAutoGainBtn" class="rtlsdr-btn rtlsdr-btn-active" style="padding:2px 8px; font-size:11px;" title="Toggle Auto / Manual Gain">Auto</button>
+                    <select id="tunerGainSelect" class="rtlsdr-select" style="display:none; padding:1px 4px; font-size:11px;" title="Select Tuner Gain in dB">
+                        <option value="0.0">0.0 dB</option>
+                        <option value="0.9">0.9 dB</option>
+                        <option value="1.4">1.4 dB</option>
+                        <option value="2.7">2.7 dB</option>
+                        <option value="3.7">3.7 dB</option>
+                        <option value="7.7">7.7 dB</option>
+                        <option value="8.7">8.7 dB</option>
+                        <option value="12.5">12.5 dB</option>
+                        <option value="14.4">14.4 dB</option>
+                        <option value="15.7">15.7 dB</option>
+                        <option value="16.6">16.6 dB</option>
+                        <option value="19.7">19.7 dB</option>
+                        <option value="20.7" selected>20.7 dB</option>
+                        <option value="22.9">22.9 dB</option>
+                        <option value="25.4">25.4 dB</option>
+                        <option value="28.0">28.0 dB</option>
+                        <option value="29.7">29.7 dB</option>
+                        <option value="32.8">32.8 dB</option>
+                        <option value="33.8">33.8 dB</option>
+                        <option value="36.4">36.4 dB</option>
+                        <option value="37.2">37.2 dB</option>
+                        <option value="38.6">38.6 dB</option>
+                        <option value="40.2">40.2 dB</option>
+                        <option value="42.1">42.1 dB</option>
+                        <option value="43.4">43.4 dB</option>
+                        <option value="43.9">43.9 dB</option>
+                        <option value="44.5">44.5 dB</option>
+                        <option value="48.0">48.0 dB</option>
+                        <option value="49.6">49.6 dB</option>
+                    </select>
+                    <span id="spectrumRangeText" style="font-size:11px; font-family:monospace; color:#94a3b8; margin-left:6px;">Span: 2.048 MHz | 1024 bins</span>
+                </div>
             </div>
             <div class="rtlsdr-canvas-container" id="spectrumContainer">
-                <canvas id="spectrumCanvas" class="rtlsdr-canvas" width="800" height="220"></canvas>
+                <canvas id="spectrumCanvas" class="rtlsdr-canvas" width="800" height="235"></canvas>
                 <div id="tooltip" class="rtlsdr-tooltip"></div>
             </div>
 
@@ -382,6 +446,8 @@ window.org_sensorhub_impl_sensor_rtlsdr_ui_RtlSdrSpectrumComponent = function() 
     var stepMinus100k = container.querySelector("#stepMinus100k");
     var stepPlus100k = container.querySelector("#stepPlus100k");
     var stepPlus1M = container.querySelector("#stepPlus1M");
+    var tunerAutoGainBtn = container.querySelector("#tunerAutoGainBtn");
+    var tunerGainSelect = container.querySelector("#tunerGainSelect");
     var autoDbBtn = container.querySelector("#autoDbBtn");
     var minDbSlider = container.querySelector("#minDbSlider");
     var minDbVal = container.querySelector("#minDbVal");
@@ -403,6 +469,9 @@ window.org_sensorhub_impl_sensor_rtlsdr_ui_RtlSdrSpectrumComponent = function() 
     // Audio DOM Elements
     var audioModeSelect = container.querySelector("#audioModeSelect");
     var audioListenBtn = container.querySelector("#audioListenBtn");
+    var audioRecordBtn = container.querySelector("#audioRecordBtn");
+    var audioRecordBadge = container.querySelector("#audioRecordBadge");
+    var recordTimer = container.querySelector("#recordTimer");
     var audioStatusBadge = container.querySelector("#audioStatusBadge");
     var volumeSlider = container.querySelector("#volumeSlider");
     var volumeVal = container.querySelector("#volumeVal");
@@ -450,7 +519,7 @@ window.org_sensorhub_impl_sensor_rtlsdr_ui_RtlSdrSpectrumComponent = function() 
             if (audioModeSelect.value === "OFF") {
                 var curMhz = state.centerFreqHz / 1e6;
                 if (curMhz >= 87.5 && curMhz <= 108.0) {
-                    audioModeSelect.value = "WFM";
+                    audioModeSelect.value = "WFM_STEREO";
                 } else if (curMhz < 24.0 || (curMhz >= 118.0 && curMhz <= 137.0)) {
                     audioModeSelect.value = "AM";
                     squelchSlider.value = -95;
@@ -461,7 +530,8 @@ window.org_sensorhub_impl_sensor_rtlsdr_ui_RtlSdrSpectrumComponent = function() 
                 }
                 if (self.setAudioMode) self.setAudioMode(audioModeSelect.value);
             }
-            audioStatusBadge.textContent = "48 kHz (" + audioModeSelect.value + ")";
+            var modeLabel = audioModeSelect.value === "WFM_STEREO" ? "WFM Stereo" : audioModeSelect.value;
+            audioStatusBadge.textContent = "48 kHz (" + modeLabel + ")";
             audioStatusBadge.style.color = "#4ade80";
         } else {
             audioListenBtn.textContent = "🔈 Listen";
@@ -489,7 +559,8 @@ window.org_sensorhub_impl_sensor_rtlsdr_ui_RtlSdrSpectrumComponent = function() 
             audioListenBtn.textContent = "🔊 Playing";
             audioListenBtn.classList.add("rtlsdr-btn-active");
             audioListenBtn.classList.remove("rtlsdr-btn-secondary");
-            audioStatusBadge.textContent = "48 kHz (" + mode + ")";
+            var modeLabel = mode === "WFM_STEREO" ? "WFM Stereo" : mode;
+            audioStatusBadge.textContent = "48 kHz (" + modeLabel + ")";
             audioStatusBadge.style.color = "#4ade80";
 
             if (mode === "AM") {
@@ -522,6 +593,134 @@ window.org_sensorhub_impl_sensor_rtlsdr_ui_RtlSdrSpectrumComponent = function() 
             self.setSquelch(val);
         }
     });
+
+    // Audio Recording State & Controls
+    var isRecording = false;
+    var recordStartTime = 0;
+    var recordInterval = null;
+
+    function formatRecordDuration(seconds) {
+        var m = Math.floor(seconds / 60);
+        var s = Math.floor(seconds % 60);
+        return (m < 10 ? "0" : "") + m + ":" + (s < 10 ? "0" : "") + s;
+    }
+
+    function updateRecordingUI(recording, filePath) {
+        isRecording = !!recording;
+        if (isRecording) {
+            audioRecordBtn.textContent = "⏹ Stop Rec";
+            audioRecordBtn.classList.add("rtlsdr-btn-recording");
+            audioRecordBtn.classList.remove("rtlsdr-btn-secondary");
+            audioRecordBadge.style.display = "inline-flex";
+            audioRecordBadge.style.alignItems = "center";
+            if (filePath) {
+                audioRecordBtn.title = "Recording to: " + filePath;
+            }
+            if (!recordInterval) {
+                recordStartTime = Date.now();
+                recordTimer.textContent = "00:00";
+                recordInterval = setInterval(function() {
+                    var elapsedSec = Math.floor((Date.now() - recordStartTime) / 1000);
+                    recordTimer.textContent = formatRecordDuration(elapsedSec);
+                }, 1000);
+            }
+        } else {
+            audioRecordBtn.textContent = "⏺ Record";
+            audioRecordBtn.classList.remove("rtlsdr-btn-recording");
+            audioRecordBtn.classList.add("rtlsdr-btn-secondary");
+            audioRecordBtn.title = "Start/Stop On-Demand Audio Recording to WAV";
+            audioRecordBadge.style.display = "none";
+            if (recordInterval) {
+                clearInterval(recordInterval);
+                recordInterval = null;
+            }
+        }
+    }
+
+    audioRecordBtn.addEventListener("click", function() {
+        var newState = !isRecording;
+        if (newState && audioModeSelect.value === "OFF") {
+            var curMhz = state.centerFreqHz / 1e6;
+            if (curMhz >= 87.5 && curMhz <= 108.0) {
+                audioModeSelect.value = "WFM_STEREO";
+            } else if (curMhz < 24.0 || (curMhz >= 118.0 && curMhz <= 137.0)) {
+                audioModeSelect.value = "AM";
+                squelchSlider.value = -95;
+                squelchVal.textContent = "-95 dB";
+                if (self.setSquelch) self.setSquelch(-95);
+            } else {
+                audioModeSelect.value = "NFM";
+            }
+            if (self.setAudioMode) self.setAudioMode(audioModeSelect.value);
+            var modeLabel = audioModeSelect.value === "WFM_STEREO" ? "WFM Stereo" : audioModeSelect.value;
+            audioStatusBadge.textContent = "48 kHz (" + modeLabel + ")";
+            audioStatusBadge.style.color = "#4ade80";
+        }
+        if (self.toggleAudioRecording) {
+            self.toggleAudioRecording(newState);
+        }
+        updateRecordingUI(newState);
+    });
+
+    self.updateRecordingState = function(recording, filePath) {
+        updateRecordingUI(recording, filePath);
+    };
+
+    tunerAutoGainBtn.addEventListener("click", function() {
+        var isAuto = tunerAutoGainBtn.classList.contains("rtlsdr-btn-active");
+        if (isAuto) {
+            tunerAutoGainBtn.textContent = "Manual";
+            tunerAutoGainBtn.classList.remove("rtlsdr-btn-active");
+            tunerAutoGainBtn.classList.add("rtlsdr-btn-secondary");
+            tunerGainSelect.style.display = "inline-block";
+            var gainVal = parseFloat(tunerGainSelect.value);
+            if (self.setAutoGain) self.setAutoGain(false);
+            if (self.setGain) self.setGain(gainVal);
+        } else {
+            tunerAutoGainBtn.textContent = "Auto";
+            tunerAutoGainBtn.classList.add("rtlsdr-btn-active");
+            tunerAutoGainBtn.classList.remove("rtlsdr-btn-secondary");
+            tunerGainSelect.style.display = "none";
+            if (self.setAutoGain) self.setAutoGain(true);
+        }
+    });
+
+    tunerGainSelect.addEventListener("change", function() {
+        var gainVal = parseFloat(this.value);
+        tunerAutoGainBtn.textContent = "Manual";
+        tunerAutoGainBtn.classList.remove("rtlsdr-btn-active");
+        tunerAutoGainBtn.classList.add("rtlsdr-btn-secondary");
+        tunerGainSelect.style.display = "inline-block";
+        if (self.setAutoGain) self.setAutoGain(false);
+        if (self.setGain) self.setGain(gainVal);
+    });
+
+    self.updateTunerGainState = function(autoGain, gainDb) {
+        if (autoGain) {
+            tunerAutoGainBtn.textContent = "Auto";
+            tunerAutoGainBtn.classList.add("rtlsdr-btn-active");
+            tunerAutoGainBtn.classList.remove("rtlsdr-btn-secondary");
+            tunerGainSelect.style.display = "none";
+        } else {
+            tunerAutoGainBtn.textContent = "Manual";
+            tunerAutoGainBtn.classList.remove("rtlsdr-btn-active");
+            tunerAutoGainBtn.classList.add("rtlsdr-btn-secondary");
+            tunerGainSelect.style.display = "inline-block";
+        }
+        if (gainDb !== undefined && gainDb !== null) {
+            var target = parseFloat(gainDb);
+            var bestIdx = 0;
+            var minDiff = 999;
+            for (var i = 0; i < tunerGainSelect.options.length; i++) {
+                var diff = Math.abs(parseFloat(tunerGainSelect.options[i].value) - target);
+                if (diff < minDiff) {
+                    minDiff = diff;
+                    bestIdx = i;
+                }
+            }
+            tunerGainSelect.selectedIndex = bestIdx;
+        }
+    };
 
     // Dynamic canvas sizing to match container width
     function syncCanvasWidth() {
@@ -727,16 +926,23 @@ window.org_sensorhub_impl_sensor_rtlsdr_ui_RtlSdrSpectrumComponent = function() 
         var maxDb = state.maxDb;
         var dbRange = Math.max(1, maxDb - minDb);
 
+        var marginTop = 12;
+        var marginBottom = 36;
+        var plotTop = marginTop;
+        var plotBottom = h - marginBottom;
+        var plotH = Math.max(1, plotBottom - plotTop);
+
         // Draw horizontal dB grid lines
         specCtx.strokeStyle = "#172033";
         specCtx.lineWidth = 1;
         specCtx.font = "bold 11px monospace";
         specCtx.fillStyle = "#f8fafc";
+        specCtx.textAlign = "left";
 
         var stepDb = dbRange <= 40 ? 10 : (dbRange <= 80 ? 20 : 30);
         var startDb = Math.ceil(minDb / stepDb) * stepDb;
         for (var db = startDb; db <= maxDb; db += stepDb) {
-            var y = h - ((db - minDb) / dbRange) * (h - 24) - 12;
+            var y = plotTop + (1.0 - (db - minDb) / dbRange) * plotH;
             specCtx.beginPath();
             specCtx.moveTo(0, y);
             specCtx.lineTo(w, y);
@@ -744,19 +950,25 @@ window.org_sensorhub_impl_sensor_rtlsdr_ui_RtlSdrSpectrumComponent = function() 
             specCtx.fillText(db + " dB", 6, y - 3);
         }
 
+        // Draw solid X axis baseline at plotBottom
+        specCtx.strokeStyle = "#334155";
+        specCtx.lineWidth = 1;
+        specCtx.beginPath();
+        specCtx.moveTo(0, plotBottom);
+        specCtx.lineTo(w, plotBottom);
+        specCtx.stroke();
+
         // Draw vertical frequency grid lines
         var spanHz = state.sampleRateHz;
         var startFreqHz = state.centerFreqHz - (spanHz / 2.0);
         var numFreqDivs = 8;
+        specCtx.strokeStyle = "#172033";
         for (var f = 0; f <= numFreqDivs; f++) {
             var x = (f / numFreqDivs) * w;
             specCtx.beginPath();
-            specCtx.moveTo(x, 0);
-            specCtx.lineTo(x, h);
+            specCtx.moveTo(x, plotTop);
+            specCtx.lineTo(x, plotBottom);
             specCtx.stroke();
-
-            var freqAtX = (startFreqHz + (f / numFreqDivs) * spanHz) / 1e6;
-            specCtx.fillText(freqAtX.toFixed(3) + " MHz", Math.min(x + 4, w - 65), h - 4);
         }
 
         // Center frequency line (yellow dash)
@@ -765,8 +977,8 @@ window.org_sensorhub_impl_sensor_rtlsdr_ui_RtlSdrSpectrumComponent = function() 
         specCtx.strokeStyle = "rgba(251, 191, 36, 0.4)";
         specCtx.setLineDash([4, 4]);
         specCtx.beginPath();
-        specCtx.moveTo(centerX, 0);
-        specCtx.lineTo(centerX, h);
+        specCtx.moveTo(centerX, plotTop);
+        specCtx.lineTo(centerX, plotBottom);
         specCtx.stroke();
         specCtx.restore();
 
@@ -775,7 +987,7 @@ window.org_sensorhub_impl_sensor_rtlsdr_ui_RtlSdrSpectrumComponent = function() 
             specCtx.fillStyle = "#94a3b8";
             specCtx.font = "14px -apple-system, sans-serif";
             specCtx.textAlign = "center";
-            specCtx.fillText(state.statusMsg || "Awaiting receiver RF data...", w / 2, h / 2);
+            specCtx.fillText(state.statusMsg || "Awaiting receiver RF data...", w / 2, plotTop + plotH / 2);
             specCtx.textAlign = "left";
             return;
         }
@@ -792,7 +1004,7 @@ window.org_sensorhub_impl_sensor_rtlsdr_ui_RtlSdrSpectrumComponent = function() 
             for (var i = 0; i < numBins; i++) {
                 var x = (i / denom) * w;
                 var dbVal = Math.max(minDb, Math.min(maxDb, state.peakHoldBins[i]));
-                var y = h - ((dbVal - minDb) / dbRange) * (h - 24) - 12;
+                var y = plotTop + (1.0 - (dbVal - minDb) / dbRange) * plotH;
                 if (i === 0) specCtx.moveTo(x, y);
                 else specCtx.lineTo(x, y);
             }
@@ -803,18 +1015,18 @@ window.org_sensorhub_impl_sensor_rtlsdr_ui_RtlSdrSpectrumComponent = function() 
 
         // Draw Filled RF Spectrum polygon
         specCtx.beginPath();
-        specCtx.moveTo(0, h);
+        specCtx.moveTo(0, plotBottom);
         for (var i = 0; i < numBins; i++) {
             var x = (i / denom) * w;
             var dbVal = Math.max(minDb, Math.min(maxDb, bins[i]));
-            var y = h - ((dbVal - minDb) / dbRange) * (h - 24) - 12;
+            var y = plotTop + (1.0 - (dbVal - minDb) / dbRange) * plotH;
             specCtx.lineTo(x, y);
         }
-        specCtx.lineTo(w, h);
+        specCtx.lineTo(w, plotBottom);
         specCtx.closePath();
 
         // Fill with cyan gradient
-        var grad = specCtx.createLinearGradient(0, 0, 0, h);
+        var grad = specCtx.createLinearGradient(0, plotTop, 0, plotBottom);
         grad.addColorStop(0, "rgba(56, 189, 248, 0.50)");
         grad.addColorStop(0.5, "rgba(14, 165, 233, 0.20)");
         grad.addColorStop(1, "rgba(14, 165, 233, 0.0)");
@@ -829,7 +1041,7 @@ window.org_sensorhub_impl_sensor_rtlsdr_ui_RtlSdrSpectrumComponent = function() 
         for (var i = 0; i < numBins; i++) {
             var x = (i / denom) * w;
             var dbVal = Math.max(minDb, Math.min(maxDb, bins[i]));
-            var y = h - ((dbVal - minDb) / dbRange) * (h - 24) - 12;
+            var y = plotTop + (1.0 - (dbVal - minDb) / dbRange) * plotH;
             if (i === 0) specCtx.moveTo(x, y);
             else specCtx.lineTo(x, y);
         }
@@ -838,15 +1050,43 @@ window.org_sensorhub_impl_sensor_rtlsdr_ui_RtlSdrSpectrumComponent = function() 
         specCtx.stroke();
         specCtx.restore();
 
+        // Draw X-axis frequency numbers (e.g. "1090.000") and centered "MHz" label
+        specCtx.save();
+        specCtx.font = "bold 11px monospace";
+        specCtx.fillStyle = "#cbd5e1";
+        var freqY = plotBottom + 14;
+        for (var f = 0; f <= numFreqDivs; f++) {
+            var x = (f / numFreqDivs) * w;
+            var freqAtX = (startFreqHz + (f / numFreqDivs) * spanHz) / 1e6;
+            var freqText = freqAtX.toFixed(3);
+            if (f === 0) {
+                specCtx.textAlign = "left";
+                specCtx.fillText(freqText, 4, freqY);
+            } else if (f === numFreqDivs) {
+                specCtx.textAlign = "right";
+                specCtx.fillText(freqText, w - 4, freqY);
+            } else {
+                specCtx.textAlign = "center";
+                specCtx.fillText(freqText, x, freqY);
+            }
+        }
+
+        // Centered X-axis unit label: "MHz" (slightly larger, bright and easy to see)
+        specCtx.font = "bold 13px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+        specCtx.fillStyle = "#38bdf8";
+        specCtx.textAlign = "center";
+        specCtx.fillText("MHz", w / 2.0, plotBottom + 29);
+        specCtx.restore();
+
         // Crosshair if hovering over spectrum
         if (state.isHovering && state.mousePos && state.mousePos.canvasType === "spectrum") {
             var mx = state.mousePos.x;
-            var my = state.mousePos.y;
+            var my = Math.min(state.mousePos.y, plotBottom);
             specCtx.save();
             specCtx.strokeStyle = "rgba(56, 189, 248, 0.75)";
             specCtx.setLineDash([2, 3]);
             specCtx.beginPath();
-            specCtx.moveTo(mx, 0); specCtx.lineTo(mx, h);
+            specCtx.moveTo(mx, plotTop); specCtx.lineTo(mx, plotBottom);
             specCtx.moveTo(0, my); specCtx.lineTo(w, my);
             specCtx.stroke();
             specCtx.restore();
@@ -898,14 +1138,15 @@ window.org_sensorhub_impl_sensor_rtlsdr_ui_RtlSdrSpectrumComponent = function() 
         wfCtx.drawImage(rowCanvas, 0, 0, w, 1, 0, 0, w, speed);
     }
 
-    // Play incoming audio chunks via Web Audio API
-    self.playAudioChunk = function(base64Pcm) {
+    // Play incoming audio chunks via Web Audio API (mono or stereo)
+    self.playAudioChunk = function(base64Pcm, channels) {
         if (!isListening || !audioCtx || !base64Pcm || audioCtx.state !== "running") return;
 
         try {
+            var ch = (channels === 2) ? 2 : 1;
             var binaryStr = atob(base64Pcm);
             var len = binaryStr.length;
-            if (len < 2) return;
+            if (len < 2 * ch) return;
 
             var bytes = new Uint8Array(len);
             for (var i = 0; i < len; i++) {
@@ -913,13 +1154,25 @@ window.org_sensorhub_impl_sensor_rtlsdr_ui_RtlSdrSpectrumComponent = function() 
             }
 
             var int16Samples = new Int16Array(bytes.buffer);
-            var numSamples = int16Samples.length;
-            if (numSamples === 0) return;
+            var totalSamples = int16Samples.length;
+            if (totalSamples === 0) return;
 
-            var audioBuf = audioCtx.createBuffer(1, numSamples, 48000);
-            var channelData = audioBuf.getChannelData(0);
-            for (var i = 0; i < numSamples; i++) {
-                channelData[i] = int16Samples[i] / 32768.0;
+            var audioBuf;
+            if (ch === 2) {
+                var numFrames = Math.floor(totalSamples / 2);
+                audioBuf = audioCtx.createBuffer(2, numFrames, 48000);
+                var leftData = audioBuf.getChannelData(0);
+                var rightData = audioBuf.getChannelData(1);
+                for (var i = 0; i < numFrames; i++) {
+                    leftData[i] = int16Samples[i * 2] / 32768.0;
+                    rightData[i] = int16Samples[i * 2 + 1] / 32768.0;
+                }
+            } else {
+                audioBuf = audioCtx.createBuffer(1, totalSamples, 48000);
+                var channelData = audioBuf.getChannelData(0);
+                for (var i = 0; i < totalSamples; i++) {
+                    channelData[i] = int16Samples[i] / 32768.0;
+                }
             }
 
             var now = audioCtx.currentTime;

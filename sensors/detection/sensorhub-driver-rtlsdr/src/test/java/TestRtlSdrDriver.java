@@ -14,8 +14,15 @@ import org.sensorhub.api.data.IStreamingDataInterface;
 import org.sensorhub.impl.sensor.rtlsdr.Descriptor;
 import org.sensorhub.impl.sensor.rtlsdr.RtlSdrConfig;
 import org.sensorhub.impl.sensor.rtlsdr.RtlSdrDriver;
+import org.sensorhub.impl.sensor.rtlsdr.dsp.RtlSdrAudioRecorder;
 import org.sensorhub.impl.sensor.rtlsdr.lib.RtlSdrDevice;
 import org.sensorhub.impl.sensor.rtlsdr.outputs.RtlSdrOutputSpectrum;
+
+import java.io.File;
+import java.io.FileInputStream;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+import java.nio.charset.StandardCharsets;
 
 import static org.junit.Assert.*;
 
@@ -50,13 +57,16 @@ public class TestRtlSdrDriver {
 
         // Verify outputs are registered
         assertNotNull(driver.getObservationOutputs());
-        assertEquals(4, driver.getObservationOutputs().size());
+        assertEquals(5, driver.getObservationOutputs().size());
 
         IStreamingDataInterface spectrumOutput = driver.getObservationOutputs().get("rtlsdr_spectrum");
         assertNotNull("Spectrum output should be registered", spectrumOutput);
 
         IStreamingDataInterface settingsOutput = driver.getObservationOutputs().get("rtlsdr_settings");
         assertNotNull("Settings output should be registered", settingsOutput);
+
+        IStreamingDataInterface audioOutput = driver.getObservationOutputs().get("audioOutput");
+        assertNotNull("Audio output should be registered", audioOutput);
 
         IStreamingDataInterface adsbOutput = driver.getObservationOutputs().get("adsbOutput");
         assertNotNull("ADS-B output should be registered", adsbOutput);
@@ -73,7 +83,7 @@ public class TestRtlSdrDriver {
     public void testAudioDemodulatorModes() {
         org.sensorhub.impl.sensor.rtlsdr.dsp.RtlSdrAudioDemodulator demod = new org.sensorhub.impl.sensor.rtlsdr.dsp.RtlSdrAudioDemodulator();
         final int[] chunkCount = new int[1];
-        demod.addListener((pcm, numSamples, b64) -> chunkCount[0]++);
+        demod.addListener((pcm, numSamples, b64, channels) -> chunkCount[0]++);
 
         byte[] syntheticIq = new byte[48000 * 2]; // 1 second of samples
         for (int i = 0; i < 48000; i++) {
@@ -96,6 +106,61 @@ public class TestRtlSdrDriver {
         demod.processSamples(syntheticIq, syntheticIq.length, 48000);
 
         assertTrue("Should have emitted audio chunks", chunkCount[0] > 0);
+    }
+
+    @Test
+    public void testWfmStereoDemodulation() {
+        org.sensorhub.impl.sensor.rtlsdr.dsp.RtlSdrAudioDemodulator demod = new org.sensorhub.impl.sensor.rtlsdr.dsp.RtlSdrAudioDemodulator();
+        final int[] stereoChunks = new int[1];
+        final double[] leftEnergy = new double[1];
+        final double[] rightEnergy = new double[1];
+
+        demod.addListener((pcm, numSamples, b64, channels) -> {
+            if (channels == 2) {
+                stereoChunks[0]++;
+                for (int i = 0; i < numSamples; i++) {
+                    short l = (short) ((pcm[i * 4] & 0xFF) | (pcm[i * 4 + 1] << 8));
+                    short r = (short) ((pcm[i * 4 + 2] & 0xFF) | (pcm[i * 4 + 3] << 8));
+                    if (stereoChunks[0] > 2) {
+                        leftEnergy[0] += (double) l * l;
+                        rightEnergy[0] += (double) r * r;
+                    }
+                }
+            }
+        });
+
+        // Generate 0.3 seconds of synthetic FM Stereo MPX signal at 2.048 MSPS:
+        // Left channel has 1 kHz tone, Right channel is silent.
+        int sampleRate = 2048000;
+        int numSamples = (int) (sampleRate * 0.3);
+        byte[] iqData = new byte[numSamples * 2];
+        double phase = 0.0;
+        double kDev = 2.0 * Math.PI * 75000.0 / sampleRate;
+
+        for (int n = 0; n < numSamples; n++) {
+            double t = (double) n / sampleRate;
+            double leftAudio = 0.4 * Math.cos(2.0 * Math.PI * 1000.0 * t);
+            double rightAudio = 0.0; // silent right channel
+
+            double m = leftAudio + rightAudio;
+            double s = leftAudio - rightAudio;
+            double pilot = 0.10 * Math.sin(2.0 * Math.PI * 19000.0 * t);
+            double subcarrier = s * Math.sin(2.0 * Math.PI * 38000.0 * t);
+
+            double mpx = m + pilot + subcarrier;
+            phase += kDev * mpx;
+
+            iqData[n * 2] = (byte) Math.round(127.5 + 100.0 * Math.cos(phase));
+            iqData[n * 2 + 1] = (byte) Math.round(127.5 + 100.0 * Math.sin(phase));
+        }
+
+        demod.setMode(RtlSdrConfig.AudioDemodMode.WFM_STEREO);
+        demod.processSamples(iqData, iqData.length, sampleRate);
+
+        assertTrue("Stereo chunks must be produced", stereoChunks[0] > 0);
+        assertTrue("Stereo pilot PLL must lock", demod.isPilotLocked());
+        assertTrue("Left channel must have much stronger signal than Right (stereo separation)",
+                leftEnergy[0] > rightEnergy[0] * 3.0);
     }
 
     @Test
@@ -191,7 +256,16 @@ public class TestRtlSdrDriver {
 
     private boolean isDeviceAvailable() {
         try {
-            return RtlSdrDevice.getDeviceCount() > 0;
+            if (RtlSdrDevice.getDeviceCount() <= 0) return false;
+            RtlSdrDevice testDev = new RtlSdrDevice();
+            try {
+                testDev.open(0);
+                testDev.close();
+                return true;
+            } catch (Throwable t) {
+                System.out.println("RTL-SDR device present but busy or unavailable: " + t.getMessage());
+                return false;
+            }
         } catch (Throwable t) {
             System.out.println("RTL-SDR native library or device not available: " + t.getMessage());
             return false;
@@ -251,5 +325,172 @@ public class TestRtlSdrDriver {
         System.out.println("Stopping driver (2nd time)...");
         driver.stop();
         System.out.println("Driver start-stop-restart test PASSED!");
+    }
+
+    @Test
+    public void testAudioRecorder() throws Exception {
+        RtlSdrAudioRecorder recorder = new RtlSdrAudioRecorder();
+        assertFalse(recorder.isRecording());
+
+        String targetDir = "build/test-recordings";
+        String filePath = recorder.startRecording(targetDir, 101.1, "WFM_STEREO");
+        assertTrue(recorder.isRecording());
+        assertNotNull(filePath);
+        assertEquals(filePath, recorder.getCurrentFilePath());
+
+        File recFile = new File(filePath);
+        assertTrue(recFile.exists());
+
+        // Generate synthetic stereo audio frame: 480 stereo samples (10ms of audio)
+        // 480 * 2 channels * 2 bytes/sample = 1920 bytes
+        int numSamples = 480;
+        byte[] pcmBytes = new byte[numSamples * 4];
+        for (int i = 0; i < numSamples; i++) {
+            short left = (short) (10000 * Math.sin(2.0 * Math.PI * 440.0 * i / 48000.0));
+            short right = (short) (10000 * Math.cos(2.0 * Math.PI * 880.0 * i / 48000.0));
+            pcmBytes[i * 4] = (byte) (left & 0xFF);
+            pcmBytes[i * 4 + 1] = (byte) ((left >> 8) & 0xFF);
+            pcmBytes[i * 4 + 2] = (byte) (right & 0xFF);
+            pcmBytes[i * 4 + 3] = (byte) ((right >> 8) & 0xFF);
+        }
+
+        // Deliver frame to recorder
+        recorder.onAudioChunk(pcmBytes, numSamples, null, 2);
+
+        String stoppedPath = recorder.stopRecording();
+        assertFalse(recorder.isRecording());
+        assertEquals(filePath, stoppedPath);
+
+        // Verify WAV header contents
+        assertEquals(44 + pcmBytes.length, recFile.length());
+        byte[] header = new byte[44];
+        try (FileInputStream fis = new FileInputStream(recFile)) {
+            int read = fis.read(header);
+            assertEquals(44, read);
+        }
+
+        ByteBuffer bb = ByteBuffer.wrap(header).order(ByteOrder.LITTLE_ENDIAN);
+        // RIFF
+        byte[] riffTag = new byte[4];
+        bb.get(riffTag);
+        assertEquals("RIFF", new String(riffTag, StandardCharsets.US_ASCII));
+        int riffLength = bb.getInt();
+        assertEquals(36 + pcmBytes.length, riffLength);
+
+        // WAVE
+        byte[] waveTag = new byte[4];
+        bb.get(waveTag);
+        assertEquals("WAVE", new String(waveTag, StandardCharsets.US_ASCII));
+
+        // fmt 
+        byte[] fmtTag = new byte[4];
+        bb.get(fmtTag);
+        assertEquals("fmt ", new String(fmtTag, StandardCharsets.US_ASCII));
+        assertEquals(16, bb.getInt()); // Subchunk1Size
+        assertEquals(1, bb.getShort()); // AudioFormat (1 = PCM)
+        assertEquals(2, bb.getShort()); // NumChannels (2 = Stereo)
+        assertEquals(48000, bb.getInt()); // SampleRate
+        assertEquals(48000 * 2 * 2, bb.getInt()); // ByteRate
+        assertEquals(4, bb.getShort()); // BlockAlign (channels * 2)
+        assertEquals(16, bb.getShort()); // BitsPerSample
+
+        // data
+        byte[] dataTag = new byte[4];
+        bb.get(dataTag);
+        assertEquals("data", new String(dataTag, StandardCharsets.US_ASCII));
+        assertEquals(pcmBytes.length, bb.getInt());
+
+        // Clean up file
+        recFile.delete();
+        if (recFile.getParentFile() != null) {
+            recFile.getParentFile().delete();
+        }
+    }
+
+    @Test
+    public void testDriverAudioRecordingToggle() throws Exception {
+        RtlSdrConfig config = new RtlSdrConfig();
+        config.audioRecordingsDir = "build/test-recordings-driver";
+        config.centerFrequency = 98.5;
+        config.audioMode = RtlSdrConfig.AudioDemodMode.WFM;
+
+        RtlSdrDriver driver = new RtlSdrDriver();
+        driver.setConfiguration(config);
+        driver.init();
+
+        assertFalse(driver.isRecordingAudio());
+        String path = driver.setAudioRecording(true);
+        assertTrue(driver.isRecordingAudio());
+        assertNotNull(path);
+
+        File f = new File(path);
+        assertTrue(f.exists());
+
+        String stoppedPath = driver.setAudioRecording(false);
+        assertFalse(driver.isRecordingAudio());
+        assertEquals(path, stoppedPath);
+
+        f.delete();
+        if (f.getParentFile() != null) {
+            f.getParentFile().delete();
+        }
+    }
+
+    @Test
+    public void testDriverSensorDescription() throws Exception {
+        RtlSdrConfig config = new RtlSdrConfig();
+        config.serialNumber = "TEST-SN-12345";
+        RtlSdrDriver driver = new RtlSdrDriver();
+        driver.setConfiguration(config);
+        driver.init();
+
+        net.opengis.sensorml.v20.AbstractProcess desc = driver.getCurrentDescription();
+        assertNotNull("Sensor description should not be null", desc);
+        assertTrue(desc.isSetDescription());
+        assertTrue(desc.getDescription().contains("RTL-SDR"));
+        assertNotNull(desc.getIdentificationList());
+        assertTrue(desc.getIdentificationList().size() > 0);
+        assertNotNull(desc.getClassificationList());
+        assertTrue(desc.getClassificationList().size() > 0);
+    }
+
+    @Test
+    public void testAudioOutputStreaming() throws Exception {
+        RtlSdrConfig config = new RtlSdrConfig();
+        config.audioMode = RtlSdrConfig.AudioDemodMode.WFM;
+        RtlSdrDriver driver = new RtlSdrDriver();
+        driver.setConfiguration(config);
+        driver.init();
+
+        org.sensorhub.impl.sensor.rtlsdr.outputs.RtlSdrOutputAudio audioOutput = driver.getOutputAudio();
+        assertNotNull(audioOutput);
+        assertNotNull(audioOutput.getRecordDescription());
+        assertNotNull(audioOutput.getRecommendedEncoding());
+        assertEquals("audioOutput", audioOutput.getName());
+
+        final boolean[] receivedEvent = new boolean[1];
+        audioOutput.registerListener((event) -> {
+            if (event instanceof org.sensorhub.api.data.DataEvent) {
+                receivedEvent[0] = true;
+            }
+        });
+
+        // Synthetic 48 kHz mono frame: 240 samples = 480 bytes
+        int numSamples = 240;
+        byte[] pcmBytes = new byte[numSamples * 2];
+        for (int i = 0; i < numSamples; i++) {
+            short s = (short) (8000 * Math.sin(2.0 * Math.PI * 1000.0 * i / 48000.0));
+            pcmBytes[i * 2] = (byte) (s & 0xFF);
+            pcmBytes[i * 2 + 1] = (byte) ((s >> 8) & 0xFF);
+        }
+
+        audioOutput.onAudioChunk(pcmBytes, numSamples, null, 1);
+        // Driver is not started, so onAudioChunk should safely drop or ignore without throwing
+        assertFalse(receivedEvent[0]);
+
+        // Now test audioOutput record structure
+        assertNotNull(audioOutput.getRecordDescription().getComponent("samples"));
+        assertNotNull(audioOutput.getRecordDescription().getComponent("sampleRate"));
+        assertNotNull(audioOutput.getRecordDescription().getComponent("sampleTime"));
     }
 }

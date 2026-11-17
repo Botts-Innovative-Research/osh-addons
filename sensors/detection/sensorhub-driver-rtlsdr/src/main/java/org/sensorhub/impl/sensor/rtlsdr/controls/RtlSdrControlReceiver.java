@@ -27,6 +27,7 @@ public class RtlSdrControlReceiver extends AbstractSensorControl<RtlSdrDriver> {
     private static final Logger log = LoggerFactory.getLogger(RtlSdrControlReceiver.class);
 
     private DataRecord commandDataStruct;
+    private DataRecord commandDataStructLegacy;
 
     private static final String FIELD_OPERATING_MODE = "operatingMode";
     private static final String FIELD_CENTER_FREQ = "centerFreq";
@@ -35,6 +36,7 @@ public class RtlSdrControlReceiver extends AbstractSensorControl<RtlSdrDriver> {
     private static final String FIELD_SAMPLE_RATE = "sampleRate";
     private static final String FIELD_AGC_MODE = "agcMode";
     private static final String FIELD_AUDIO_MODE = "audioMode";
+    private static final String FIELD_RECORD_AUDIO = "recordAudio";
 
     public RtlSdrControlReceiver(RtlSdrDriver driver) {
         super("receiverControl", driver);
@@ -51,10 +53,11 @@ public class RtlSdrControlReceiver extends AbstractSensorControl<RtlSdrDriver> {
         int initRate = cfg != null ? cfg.sampleRate : 2048000;
         boolean initAgc = cfg != null && cfg.agcMode;
         String initAudioMode = (cfg != null && cfg.audioMode != null) ? cfg.audioMode.name() : "OFF";
+        boolean initRecording = parentSensor != null && parentSensor.isRecordingAudio();
 
-        commandDataStruct = fac.createRecord()
+        commandDataStructLegacy = fac.createRecord()
                 .updatable(true)
-                .name("rfReceiverControl")
+                .name("rfReceiverControlLegacy")
                 .label("RF Receiver Configuration Control")
                 .description("Controls for operating mode, tuning center frequency, gain, AGC, and audio demodulation")
                 .definition(SWEHelper.getPropertyUri("RfReceiverControl"))
@@ -94,17 +97,95 @@ public class RtlSdrControlReceiver extends AbstractSensorControl<RtlSdrDriver> {
                         .value(initAgc))
                 .addField(FIELD_AUDIO_MODE, fac.createCategory()
                         .label("Audio Demodulation Mode")
-                        .description("Audio demodulation mode: OFF, AM, NFM, WFM, USB, LSB, CW")
+                        .description("Audio demodulation mode: OFF, AM, NFM, WFM, WFM_STEREO, USB, LSB, CW")
                         .definition(SWEHelper.getPropertyUri("AudioDemodMode"))
-                        .addAllowedValues("OFF", "AM", "NFM", "WFM", "USB", "LSB", "CW")
+                        .addAllowedValues("OFF", "AM", "NFM", "WFM", "WFM_STEREO", "USB", "LSB", "CW")
                         .value(initAudioMode))
+                .build();
+
+        commandDataStruct = fac.createRecord()
+                .updatable(true)
+                .name("rfReceiverControl")
+                .label("RF Receiver Configuration Control")
+                .description("Controls for operating mode, tuning center frequency, gain, AGC, audio demodulation, and on-demand audio recording")
+                .definition(SWEHelper.getPropertyUri("RfReceiverControl"))
+                .addField(FIELD_OPERATING_MODE, fac.createCategory()
+                        .label("Operating Mode")
+                        .description("Receiver operating mode: SPECTRUM_AUDIO, ADSB_RECEIVER, or AIS_RECEIVER")
+                        .definition(SWEHelper.getPropertyUri("OperatingMode"))
+                        .addAllowedValues("SPECTRUM_AUDIO", "ADSB_RECEIVER", "AIS_RECEIVER")
+                        .value(initOpMode))
+                .addField(FIELD_CENTER_FREQ, fac.createQuantity()
+                        .uomCode("MHz")
+                        .label("Center Frequency")
+                        .description("Tuned center frequency in MHz")
+                        .definition(SWEConstants.QUDT_URI_PREFIX + "Frequency")
+                        .value(initFreq))
+                .addField(FIELD_GAIN, fac.createCategory()
+                        .label("Receiver Gain (dB)")
+                        .description("Input receiver tuner gain in dB")
+                        .definition(SWEHelper.getPropertyUri("UniformGain"))
+                        .addAllowedValues(RtlSdrConstants.GAIN_VALUES_DB)
+                        .value(String.valueOf(initGain)))
+                .addField(FIELD_AUTO_GAIN, fac.createBoolean()
+                        .label("Auto Gain Control (Tuner)")
+                        .description("Enable automatic gain control for tuner")
+                        .definition(SWEHelper.getPropertyUri("AutoGain"))
+                        .value(initAutoGain))
+                .addField(FIELD_SAMPLE_RATE, fac.createQuantity()
+                        .uomCode("Hz")
+                        .label("Sample Rate")
+                        .description("Sample rate in Samples/second (e.g. 2048000)")
+                        .definition(SWEConstants.QUDT_URI_PREFIX + "Frequency")
+                        .value(initRate))
+                .addField(FIELD_AGC_MODE, fac.createBoolean()
+                        .label("RTL Digital AGC")
+                        .description("Enable digital AGC on RTL2832 chip")
+                        .definition(SWEHelper.getPropertyUri("AgcMode"))
+                        .value(initAgc))
+                .addField(FIELD_AUDIO_MODE, fac.createCategory()
+                        .label("Audio Demodulation Mode")
+                        .description("Audio demodulation mode: OFF, AM, NFM, WFM, WFM_STEREO, USB, LSB, CW")
+                        .definition(SWEHelper.getPropertyUri("AudioDemodMode"))
+                        .addAllowedValues("OFF", "AM", "NFM", "WFM", "WFM_STEREO", "USB", "LSB", "CW")
+                        .value(initAudioMode))
+                .addField(FIELD_RECORD_AUDIO, fac.createBoolean()
+                        .label("Record Demodulated Audio")
+                        .description("Enable or disable on-demand recording of demodulated audio to local WAV file")
+                        .definition(SWEHelper.getPropertyUri("RecordAudio"))
+                        .value(initRecording))
                 .build();
     }
 
     @Override
     protected boolean execCommand(DataBlock cmdData) throws CommandException {
-        DataRecord commandData = commandDataStruct.copy();
-        commandData.setData(cmdData);
+        DataRecord commandData;
+        int numInputs = 0;
+        if (cmdData instanceof org.vast.data.DataBlockTuple) {
+            org.vast.data.DataBlockTuple tuple = (org.vast.data.DataBlockTuple) cmdData;
+            try {
+                java.lang.reflect.Field f = org.vast.data.DataBlockTuple.class.getDeclaredField("blockArray");
+                f.setAccessible(true);
+                Object[] arr = (Object[]) f.get(tuple);
+                if (arr != null) numInputs = arr.length;
+            } catch (Exception ignored) {
+            }
+        }
+
+        // If client sent 7 fields (from a client that cached the older schema), decode with 7-field structure
+        if (numInputs == 7 && commandDataStructLegacy != null) {
+            commandData = commandDataStructLegacy.copy();
+        } else {
+            commandData = commandDataStruct.copy();
+        }
+
+        try {
+            commandData.setData(cmdData);
+        } catch (ArrayIndexOutOfBoundsException e) {
+            log.warn("Command data size mismatch, falling back to legacy schema: {}", e.getMessage());
+            commandData = commandDataStructLegacy.copy();
+            commandData.setData(cmdData);
+        }
 
         RtlSdrConfig config = parentSensor.getConfiguration();
 
@@ -208,6 +289,20 @@ public class RtlSdrControlReceiver extends AbstractSensorControl<RtlSdrDriver> {
             }
         } catch (Exception e) {
             log.warn("Error setting audio demod mode: {}", e.getMessage());
+        }
+
+        // 8. Record Audio Toggle
+        try {
+            Boolean recordField = (Boolean) commandData.getField(FIELD_RECORD_AUDIO);
+            if (recordField != null) {
+                boolean startRecord = recordField.getValue();
+                if (startRecord != parentSensor.isRecordingAudio()) {
+                    log.info("Setting audio recording active via Command Input: {}", startRecord);
+                    parentSensor.setAudioRecording(startRecord);
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Error setting audio recording state: {}", e.getMessage());
         }
 
         return true;

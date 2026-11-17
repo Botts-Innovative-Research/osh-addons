@@ -35,12 +35,12 @@ public class RtlSdrSpectrumComponent extends AbstractJavaScriptComponent {
     private transient Timer pushTimer;
     private long lastFrameTimestamp = -1;
 
-    private final transient RtlSdrAudioDemodulator.AudioFrameListener audioListener = (pcmData, numSamples, base64Pcm) -> {
+    private final transient RtlSdrAudioDemodulator.AudioFrameListener audioListener = (pcmData, numSamples, base64Pcm, channels) -> {
         try {
             UI ui = getUI();
             if (ui != null && isAttached()) {
                 ui.access(() -> {
-                    callFunction("playAudioChunk", base64Pcm);
+                    callFunction("playAudioChunk", base64Pcm, channels);
                     ui.push();
                 });
             }
@@ -69,6 +69,7 @@ public class RtlSdrSpectrumComponent extends AbstractJavaScriptComponent {
                 if (args.length() > 0) {
                     double gainDb = args.getNumber(0);
                     driver.setTunerGain(gainDb);
+                    callFunction("updateTunerGainState", driver.getConfiguration().autoGain, driver.getConfiguration().tunerGain);
                 }
             } catch (Exception e) {
                 log.error("Failed to set gain from UI: {}", e.getMessage());
@@ -80,6 +81,7 @@ public class RtlSdrSpectrumComponent extends AbstractJavaScriptComponent {
                 if (args.length() > 0) {
                     boolean autoGain = args.getBoolean(0);
                     driver.setAutoGain(autoGain);
+                    callFunction("updateTunerGainState", driver.getConfiguration().autoGain, driver.getConfiguration().tunerGain);
                 }
             } catch (Exception e) {
                 log.error("Failed to set auto-gain from UI: {}", e.getMessage());
@@ -120,6 +122,16 @@ public class RtlSdrSpectrumComponent extends AbstractJavaScriptComponent {
             }
         });
 
+        addFunction("toggleAudioRecording", (JsonArray args) -> {
+            try {
+                boolean enable = args.length() > 0 ? args.getBoolean(0) : !driver.isRecordingAudio();
+                driver.setAudioRecording(enable);
+                callFunction("updateRecordingState", driver.isRecordingAudio(), driver.getAudioRecorder().getCurrentFilePath());
+            } catch (Exception e) {
+                log.error("Failed to toggle audio recording from UI: {}", e.getMessage());
+            }
+        });
+
         addFunction("requestSpectrum", (JsonArray args) -> {
             pushLatestFrame();
         });
@@ -155,6 +167,10 @@ public class RtlSdrSpectrumComponent extends AbstractJavaScriptComponent {
         }
     }
 
+    private boolean lastRecordingState = false;
+    private boolean lastAutoGainState = true;
+    private double lastTunerGainState = 20.0;
+
     @Override
     public void attach() {
         super.attach();
@@ -167,6 +183,12 @@ public class RtlSdrSpectrumComponent extends AbstractJavaScriptComponent {
         }
 
         // Send initial state immediately
+        lastRecordingState = driver.isRecordingAudio();
+        lastAutoGainState = driver.getConfiguration().autoGain;
+        lastTunerGainState = driver.getConfiguration().tunerGain;
+        callFunction("updateRecordingState", lastRecordingState,
+                driver.getAudioRecorder() != null ? driver.getAudioRecorder().getCurrentFilePath() : "");
+        callFunction("updateTunerGainState", lastAutoGainState, lastTunerGainState);
         pushLatestFrame();
 
         // Start high-responsiveness 25 Hz refresh timer (every 40 ms)
@@ -181,27 +203,49 @@ public class RtlSdrSpectrumComponent extends AbstractJavaScriptComponent {
                         return;
                     }
 
+                    boolean currentRec = driver.isRecordingAudio();
+                    boolean recStateChanged = (currentRec != lastRecordingState);
+                    if (recStateChanged) {
+                        lastRecordingState = currentRec;
+                    }
+
+                    boolean currentAutoGain = driver.getConfiguration().autoGain;
+                    double currentTunerGain = driver.getConfiguration().tunerGain;
+                    boolean gainStateChanged = (currentAutoGain != lastAutoGainState || Double.compare(currentTunerGain, lastTunerGainState) != 0);
+                    if (gainStateChanged) {
+                        lastAutoGainState = currentAutoGain;
+                        lastTunerGainState = currentTunerGain;
+                    }
+
                     RtlSdrOutputSpectrum output = driver.getOutputSpectrum();
-                    if (output == null) {
-                        return;
-                    }
+                    RtlSdrOutputSpectrum.SpectrumFrame frame = (output != null) ? output.getLatestSpectrumFrame() : null;
+                    boolean frameChanged = (frame != null && frame.timestamp != lastFrameTimestamp);
 
-                    RtlSdrOutputSpectrum.SpectrumFrame frame = output.getLatestSpectrumFrame();
-                    if (frame == null || frame.timestamp == lastFrameTimestamp) {
-                        return;
-                    }
-                    lastFrameTimestamp = frame.timestamp;
+                    if (recStateChanged || gainStateChanged || frameChanged) {
+                        if (frame != null) {
+                            lastFrameTimestamp = frame.timestamp;
+                        }
 
-                    ui.access(() -> {
-                        pushLatestFrame();
-                        ui.push();
-                    });
+                        ui.access(() -> {
+                            if (recStateChanged) {
+                                callFunction("updateRecordingState", currentRec,
+                                        driver.getAudioRecorder() != null ? driver.getAudioRecorder().getCurrentFilePath() : "");
+                            }
+                            if (gainStateChanged) {
+                                callFunction("updateTunerGainState", currentAutoGain, currentTunerGain);
+                            }
+                            if (frameChanged) {
+                                pushLatestFrame();
+                            }
+                            ui.push();
+                        });
+                    }
 
                 } catch (Exception e) {
                     // ignore push error
                 }
             }
-        } , 300, 40);
+        }, 300, 40);
     }
 
     @Override

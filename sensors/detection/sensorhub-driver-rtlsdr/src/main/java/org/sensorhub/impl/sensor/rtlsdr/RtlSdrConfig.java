@@ -30,6 +30,7 @@ public class RtlSdrConfig extends SensorConfig {
         AM,
         NFM,
         WFM,
+        WFM_STEREO,
         USB,
         LSB,
         CW
@@ -91,4 +92,7 @@ public class RtlSdrConfig extends SensorConfig {
 
     @DisplayInfo(label = "Receiver Longitude", desc = "Reference longitude of the ground station receiver (optional, enables instant 1-frame ADS-B local CPR decoding)")
     public double receiverLon = Double.NaN;
+
+    @DisplayInfo(label = "Audio Recordings Directory", desc = "Directory where on-demand recorded audio WAV files are stored")
+    public String audioRecordingsDir = "recordings/rtlsdr";
 }
